@@ -14,7 +14,7 @@ if (!RAILWAY_URL) {
 }
 
 const EXCEL_PATH = path.join(__dirname, '../../x lists.xlsx');
-const BATCH_SIZE = 200;
+const BATCH_SIZE = 50;
 
 function parseExcel() {
   const wb = xlsx.readFile(EXCEL_PATH);

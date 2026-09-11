@@ -28,21 +28,27 @@ export async function GET(request: Request) {
 
 // POST bulk import
 export async function POST(request: Request) {
-  const body = await request.json();
-  const records: IXListInput[] = Array.isArray(body) ? body : [body];
+  try {
+    const body = await request.json();
+    const records: IXListInput[] = Array.isArray(body) ? body : [body];
 
-  await connectDB();
+    await connectDB();
 
-  const ops = records.map(r => ({
-    updateOne: {
-      filter: { username: r.username },
-      update: { $setOnInsert: { ...r, addedAt: new Date().toISOString(), status: 'new' } },
-      upsert: true,
-    },
-  }));
+    const ops = records.map(r => ({
+      updateOne: {
+        filter: { username: r.username },
+        update: { $setOnInsert: { ...r, addedAt: new Date().toISOString(), status: 'new' } },
+        upsert: true,
+      },
+    }));
 
-  const result = await XList.bulkWrite(ops);
-  return NextResponse.json({ inserted: result.upsertedCount, matched: result.matchedCount });
+    const result = await XList.bulkWrite(ops);
+    return NextResponse.json({ inserted: result.upsertedCount, matched: result.matchedCount });
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error('XList import error:', msg);
+    return NextResponse.json({ error: msg }, { status: 500 });
+  }
 }
 
 interface IXListInput {
