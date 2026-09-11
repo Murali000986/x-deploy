@@ -29,7 +29,7 @@ function XListPickerModal({ onClose, onAdd }: { onClose: () => void, onAdd: (c: 
       body: JSON.stringify({
         username: item.username,
         name: item.username,
-        description: item.category ? `Category: ${item.category}\nWallet: ${item.walletAddress || 'None'}\nValue: ${item.usdValue || 'None'}` : "",
+        description: `Category: ${item.category || 'None'}\nWallet: ${item.walletAddress || 'None'}\nValue: ${item.usdValue || 'None'}`,
       }),
     });
     if (res.ok) {
@@ -210,7 +210,7 @@ export default function CandidatesPage() {
                       </div>
 
                       {c.description && (
-                        <p className="text-xs text-zinc-500 line-clamp-2 mb-3">{c.description}</p>
+                        <p className="text-xs text-zinc-600 whitespace-pre-wrap mb-3 leading-relaxed">{c.description}</p>
                       )}
 
                       {/* Status transition buttons */}
