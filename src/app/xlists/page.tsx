@@ -1,6 +1,6 @@
 "use client";
 import { useState, useEffect, useCallback } from "react";
-import { Loader2, Search, ExternalLink } from "lucide-react";
+import { Loader2, Search, ExternalLink, Copy, Check } from "lucide-react";
 
 const STATUSES = ["all", "new", "pending", "chat", "done"];
 const STATUS_COLORS: Record<string, string> = {
@@ -19,6 +19,20 @@ interface XListItem {
   category?: string;
   status: string;
   addedAt: string;
+}
+
+function CopyButton({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false);
+  const copy = () => {
+    navigator.clipboard.writeText(text);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  };
+  return (
+    <button onClick={copy} className="ml-1.5 text-zinc-400 hover:text-zinc-600 cursor-pointer inline-flex items-center" title="Copy">
+      {copied ? <Check className="w-3.5 h-3.5 text-green-500" /> : <Copy className="w-3.5 h-3.5" />}
+    </button>
+  );
 }
 
 export default function XListPage() {
@@ -100,26 +114,40 @@ export default function XListPage() {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-zinc-100 bg-zinc-50 text-zinc-500 text-xs">
+                    <th className="text-left px-4 py-3 font-medium">#</th>
                     <th className="text-left px-4 py-3 font-medium">Username</th>
                     <th className="text-left px-4 py-3 font-medium">Category</th>
-                    <th className="text-left px-4 py-3 font-medium">Wallet</th>
+                    <th className="text-left px-4 py-3 font-medium">Wallet Address</th>
                     <th className="text-left px-4 py-3 font-medium">USD Value</th>
                     <th className="text-left px-4 py-3 font-medium">Status</th>
-                    <th className="text-left px-4 py-3 font-medium">Links</th>
+                    <th className="text-left px-4 py-3 font-medium">X</th>
                   </tr>
                 </thead>
                 <tbody>
                   {items.length === 0 && (
-                    <tr><td colSpan={6} className="text-center py-16 text-zinc-400">No records found</td></tr>
+                    <tr><td colSpan={7} className="text-center py-16 text-zinc-400">No records found</td></tr>
                   )}
-                  {items.map(item => (
+                  {items.map((item, i) => (
                     <tr key={item._id} className="border-b border-zinc-50 hover:bg-zinc-50 transition-colors">
+                      <td className="px-4 py-3 text-zinc-400 text-xs">{(page - 1) * limit + i + 1}</td>
                       <td className="px-4 py-3 font-medium">@{item.username}</td>
                       <td className="px-4 py-3 text-zinc-500 capitalize">{item.category || "—"}</td>
-                      <td className="px-4 py-3 text-zinc-400 font-mono text-xs">
-                        {item.walletAddress ? `${item.walletAddress.slice(0, 6)}...${item.walletAddress.slice(-4)}` : "—"}
+                      <td className="px-4 py-3 font-mono text-xs text-zinc-600">
+                        {item.walletAddress ? (
+                          <span className="flex items-center gap-0.5">
+                            <span className="break-all">{item.walletAddress}</span>
+                            <CopyButton text={item.walletAddress} />
+                          </span>
+                        ) : "—"}
                       </td>
-                      <td className="px-4 py-3 text-zinc-600">{item.usdValue || "—"}</td>
+                      <td className="px-4 py-3 text-zinc-600 whitespace-nowrap">
+                        {item.usdValue && item.usdValue !== "No Data" ? (
+                          <span className="flex items-center gap-0.5">
+                            {item.usdValue}
+                            <CopyButton text={item.usdValue} />
+                          </span>
+                        ) : <span className="text-zinc-400">—</span>}
+                      </td>
                       <td className="px-4 py-3">
                         <select
                           value={item.status}
@@ -134,7 +162,7 @@ export default function XListPage() {
                       <td className="px-4 py-3">
                         <a href={item.xUrl} target="_blank" rel="noopener noreferrer"
                           className="inline-flex items-center gap-1 text-xs text-blue-500 hover:text-blue-700">
-                          <ExternalLink className="w-3 h-3" /> X
+                          <ExternalLink className="w-3 h-3" />
                         </a>
                       </td>
                     </tr>
