@@ -21,22 +21,31 @@ function XListPickerModal({ onClose, onAdd }: { onClose: () => void, onAdd: (c: 
     return () => clearTimeout(t);
   }, [search]);
 
-  const handleAdd = async (item: any) => {
-    setAddingId(item._id);
+  const handleAdd = async (item: any, isManual = false) => {
+    setAddingId(isManual ? 'manual' : item._id);
+    const descriptionLines = [];
+    if (item.category) descriptionLines.push(`Category: ${item.category}`);
+    if (item.walletAddress) descriptionLines.push(`Wallet: ${item.walletAddress}`);
+    if (item.usdValue) descriptionLines.push(`Value: ${item.usdValue}`);
+
     const res = await fetch("/api/candidates", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        username: item.username,
-        name: item.username,
-        description: `Category: ${item.category || 'None'}\nWallet: ${item.walletAddress || 'None'}\nValue: ${item.usdValue || 'None'}`,
+        username: item.username.trim().replace(/^@/, ''),
+        name: item.username.trim().replace(/^@/, ''),
+        description: descriptionLines.join("\n") || undefined,
       }),
     });
     if (res.ok) {
       onAdd(await res.json());
+      if (isManual) setSearch("");
     }
     setAddingId(null);
   };
+
+  const cleanSearch = search.trim().replace(/^@/, '');
+  const showManualAdd = cleanSearch.length > 0 && !items.some(i => i.username.toLowerCase() === cleanSearch.toLowerCase());
 
   return (
     <div className="fixed inset-0 bg-zinc-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
@@ -59,31 +68,49 @@ function XListPickerModal({ onClose, onAdd }: { onClose: () => void, onAdd: (c: 
           </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-4 space-y-2 relative">
-          {loading ? (
-            <div className="py-20 flex justify-center"><Loader2 className="w-6 h-6 animate-spin text-zinc-400" /></div>
-          ) : items.length === 0 ? (
-            <div className="py-12 text-center text-zinc-400 text-sm">No accounts found</div>
-          ) : (
-            items.map(item => (
-              <div key={item._id} className="flex items-center gap-3 p-3 rounded-xl border border-zinc-100 hover:border-zinc-200 transition-colors bg-white">
+        <div className="flex-1 overflow-y-auto">
+          <div className="p-4 space-y-2">
+            {showManualAdd && (
+              <div className="flex items-center gap-3 p-3 rounded-xl border border-dashed border-blue-200 bg-blue-50 mt-1 mb-4">
                 <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
-                    <p className="font-semibold text-sm truncate">@{item.username}</p>
-                    {item.status === 'done' && <span className="px-1.5 py-0.5 rounded text-[10px] uppercase font-bold bg-zinc-100 text-zinc-500">Done</span>}
-                  </div>
-                  <p className="text-xs text-zinc-500 truncate mt-0.5">{item.category || "No category"} • {item.usdValue || "No value"}</p>
+                  <p className="font-semibold text-sm text-blue-700 truncate">Add @{cleanSearch} manually</p>
+                  <p className="text-xs text-blue-500/70 truncate mt-0.5">Create a new candidate directly in pipeline</p>
                 </div>
                 <button
-                  onClick={() => handleAdd(item)}
-                  disabled={addingId === item._id}
+                  onClick={() => handleAdd({ username: cleanSearch }, true)}
+                  disabled={addingId === 'manual'}
                   className="shrink-0 p-2 text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50 rounded-lg cursor-pointer transition-colors"
                 >
-                  {addingId === item._id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
+                  {addingId === 'manual' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
                 </button>
               </div>
-            ))
-          )}
+            )}
+
+            {loading ? (
+              <div className="py-20 flex justify-center"><Loader2 className="w-6 h-6 animate-spin text-zinc-400" /></div>
+            ) : items.length === 0 ? (
+              !showManualAdd && <div className="py-12 text-center text-zinc-400 text-sm">No accounts found</div>
+            ) : (
+              items.map(item => (
+                <div key={item._id} className="flex items-center gap-3 p-3 rounded-xl border border-zinc-100 hover:border-zinc-200 transition-colors bg-white">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <p className="font-semibold text-sm truncate">@{item.username}</p>
+                      {item.status === 'done' && <span className="px-1.5 py-0.5 rounded text-[10px] uppercase font-bold bg-zinc-100 text-zinc-500">Done</span>}
+                    </div>
+                    <p className="text-xs text-zinc-500 truncate mt-0.5">{item.category || "No category"} • {item.usdValue || "No value"}</p>
+                  </div>
+                  <button
+                    onClick={() => handleAdd(item, false)}
+                    disabled={addingId === item._id}
+                    className="shrink-0 p-2 text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50 rounded-lg cursor-pointer transition-colors"
+                  >
+                    {addingId === item._id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
+                  </button>
+                </div>
+              ))
+            )}
+          </div>
         </div>
       </div>
     </div>
