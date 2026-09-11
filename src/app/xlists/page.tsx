@@ -35,6 +35,43 @@ function CopyButton({ text }: { text: string }) {
   );
 }
 
+function AddToPipelineButton({ item }: { item: XListItem }) {
+  const [status, setStatus] = useState<"idle" | "loading" | "added">("idle");
+
+  const add = async () => {
+    setStatus("loading");
+    try {
+      const res = await fetch("/api/candidates", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          username: item.username,
+          name: item.username,
+          description: item.category ? `Category: ${item.category}` : "",
+        }),
+      });
+      if (res.ok) {
+        setStatus("added");
+        setTimeout(() => setStatus("idle"), 3000);
+      } else {
+        setStatus("idle");
+      }
+    } catch {
+      setStatus("idle");
+    }
+  };
+
+  if (status === "added") {
+    return <span className="inline-flex items-center gap-1 text-xs text-green-600 font-medium"><Check className="w-3.5 h-3.5" /> Added</span>;
+  }
+  
+  return (
+    <button onClick={add} disabled={status === "loading"} className="text-xs px-2.5 py-1.5 rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-100 font-medium transition-colors disabled:opacity-50 flex items-center justify-center cursor-pointer whitespace-nowrap">
+      {status === "loading" ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : "Add to Pipeline"}
+    </button>
+  );
+}
+
 export default function XListPage() {
   const [items, setItems] = useState<XListItem[]>([]);
   const [total, setTotal] = useState(0);
@@ -138,11 +175,12 @@ export default function XListPage() {
                       </span>
                     </th>
                     <th className="text-left px-4 py-3 font-medium">Status</th>
+                    <th className="text-left px-4 py-3 font-medium">Pipeline</th>
                   </tr>
                 </thead>
                 <tbody>
                   {items.length === 0 && (
-                    <tr><td colSpan={6} className="text-center py-16 text-zinc-400">No records found</td></tr>
+                    <tr><td colSpan={7} className="text-center py-16 text-zinc-400">No records found</td></tr>
                   )}
                   {items.map((item, i) => (
                     <tr key={item._id} className="border-b border-zinc-50 hover:bg-zinc-50 transition-colors">
@@ -172,6 +210,9 @@ export default function XListPage() {
                             <option key={s} value={s}>{s}</option>
                           ))}
                         </select>
+                      </td>
+                      <td className="px-4 py-3">
+                        <AddToPipelineButton item={item} />
                       </td>
                     </tr>
                   ))}
