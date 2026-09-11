@@ -3,6 +3,67 @@ import { useState, useEffect } from 'react';
 import { Users, Loader2, MessageCircle, Clock, Trash2, Search, Plus, X, ExternalLink } from 'lucide-react';
 import Link from 'next/link';
 
+function ComposeDMModal({ candidate, onClose, onSent }: { candidate: any, onClose: () => void, onSent: () => void }) {
+  const [text, setText] = useState(`Hi ${candidate.name}, `);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  const handleSend = async () => {
+    if (!text.trim()) return;
+    setLoading(true);
+    setError("");
+    
+    try {
+      const res = await fetch("/api/dm", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username: candidate.username, text }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to send DM");
+      
+      onSent();
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-zinc-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl w-full max-w-md shadow-xl overflow-hidden flex flex-col">
+        <div className="flex items-center justify-between p-4 border-b border-zinc-100">
+          <h2 className="font-bold text-lg">Send DM to @{candidate.username}</h2>
+          <button onClick={onClose} disabled={loading} className="p-2 -mr-2 text-zinc-400 hover:text-zinc-600 rounded-lg cursor-pointer transition-colors disabled:opacity-50"><X className="w-5 h-5"/></button>
+        </div>
+        
+        <div className="p-4 space-y-4">
+          {error && <div className="p-3 rounded-xl bg-red-50 text-red-600 text-sm border border-red-100 leading-relaxed font-medium">{error}</div>}
+          <textarea
+            autoFocus
+            className="w-full bg-zinc-50 border border-zinc-200 rounded-xl p-3 outline-none min-h-[120px] text-sm focus:border-blue-300 focus:ring-4 focus:ring-blue-100 transition-all resize-none"
+            placeholder="Write your message here..."
+            value={text}
+            onChange={e => setText(e.target.value)}
+          />
+        </div>
+        
+        <div className="p-4 border-t border-zinc-100 bg-zinc-50 flex justify-end">
+          <button
+            onClick={handleSend}
+            disabled={loading || !text.trim()}
+            className="flex items-center gap-2 px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-xl transition-colors disabled:opacity-50 cursor-pointer"
+          >
+            {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <MessageCircle className="w-4 h-4" />}
+            {loading ? "Sending..." : "Send Message"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function XListPickerModal({ onClose, onAdd }: { onClose: () => void, onAdd: (c: any) => void }) {
   const [items, setItems] = useState<any[]>([]);
   const [search, setSearch] = useState("");
@@ -139,6 +200,7 @@ export default function CandidatesPage() {
   const [candidates, setCandidates] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [dmCandidate, setDmCandidate] = useState<any | null>(null);
 
   useEffect(() => { fetchCandidates(); }, []);
 
@@ -244,7 +306,7 @@ export default function CandidatesPage() {
                       <div className="flex gap-1.5 flex-wrap">
                         {col.key === 'new' && (
                           <>
-                            <button onClick={() => handleStatusChange(c.id, 'pending')}
+                            <button onClick={() => setDmCandidate(c)}
                               className="text-xs px-2.5 py-1 rounded-lg bg-amber-100 text-amber-700 hover:bg-amber-200 transition-colors cursor-pointer">
                               Send DM
                             </button>
@@ -288,6 +350,17 @@ export default function CandidatesPage() {
         <XListPickerModal
           onClose={() => setPickerOpen(false)}
           onAdd={() => fetchCandidates()}
+        />
+      )}
+
+      {dmCandidate && (
+        <ComposeDMModal
+          candidate={dmCandidate}
+          onClose={() => setDmCandidate(null)}
+          onSent={() => {
+            handleStatusChange(dmCandidate.id, 'pending');
+            setDmCandidate(null);
+          }}
         />
       )}
     </div>
