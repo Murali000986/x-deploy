@@ -1,40 +1,50 @@
 import { NextResponse } from 'next/server';
-import { generateOAuth1Header } from '@/lib/twitter';
+import { TwitterApi } from 'twitter-api-v2';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: Request) {
   try {
-    // Try Bearer token first (cheaper, works on most tiers)
-    const url = 'https://api.twitter.com/2/dm_events?event_types=MessageCreate&dm_event.fields=text,sender_id,created_at&expansions=sender_id&user.fields=username,name,profile_image_url';
-    
-    // Use OAuth 1.0a for DMs (Bearer doesn't work for user-context DMs)
-    const authHeader = generateOAuth1Header('GET', url);
-    
-    const response = await fetch(url, {
-      headers: { 'Authorization': authHeader }
-    });
+    const {
+      X_API_KEY,
+      X_API_SECRET,
+      X_ACCESS_TOKEN,
+      X_ACCESS_SECRET,
+    } = process.env;
 
-    // If OAuth1 fails (e.g. missing consumer keys), return a helpful error
-    if (!response.ok) {
-      const errorBody = await response.json().catch(() => ({}));
-      
-      // Check if it's a credential issue
-      const isAuthError = response.status === 401 || response.status === 403;
-      if (isAuthError) {
-        return NextResponse.json({
-          data: [],
-          includes: { users: [] },
-          _warning: 'DMs require OAuth 1.0a Consumer Keys (API Key + Secret from X Developer Portal → "Consumer Keys" section). Current credentials are OAuth 2.0 Client ID/Secret which cannot access DMs.'
-        }, { status: 200 }); // Return empty gracefully
-      }
-      
-      return NextResponse.json({ error: 'Failed to fetch DMs', details: errorBody }, { status: response.status });
+    if (!X_API_KEY || !X_API_SECRET || !X_ACCESS_TOKEN || !X_ACCESS_SECRET) {
+      return NextResponse.json({
+        data: [],
+        includes: { users: [] },
+        _warning: 'Environment variables for X API are missing.'
+      }, { status: 200 });
     }
 
-    const data = await response.json();
-    return NextResponse.json(data);
+    const client = new TwitterApi({
+      appKey: X_API_KEY,
+      appSecret: X_API_SECRET,
+      accessToken: X_ACCESS_TOKEN,
+      accessSecret: X_ACCESS_SECRET,
+    });
+
+    const dmEvents = await client.v2.listDmEvents({
+      event_types: 'MessageCreate',
+      'dm_event.fields': 'text,sender_id,created_at' as any,
+      expansions: 'sender_id' as any,
+      'user.fields': 'username,name,profile_image_url' as any
+    });
+
+    return NextResponse.json((dmEvents as any)._realData);
   } catch (error: any) {
+    console.error("X API Error fetching DMs:", error);
+    const isAuthError = error.code === 401 || error.code === 403;
+    if (isAuthError) {
+      return NextResponse.json({
+        data: [],
+        includes: { users: [] },
+        _warning: '⚠️ DMs need Consumer Keys (API Key + Secret) from X Dev Portal. Make sure your app has "Read and write and Direct message" permissions and regenerate your keys!'
+      }, { status: 200 });
+    }
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
