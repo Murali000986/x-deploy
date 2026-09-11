@@ -4,13 +4,21 @@ import XList from '@/lib/models/xlist';
 
 export const dynamic = 'force-dynamic';
 
-// GET — list all with optional status filter and pagination
+// Helper: parse "$1,234.56" or "1234" → number for sorting
+function parseUsd(val: string): number {
+  if (!val || val === 'No Data') return -1;
+  const n = parseFloat(val.replace(/[$,]/g, ''));
+  return isNaN(n) ? -1 : n;
+}
+
+// GET — list with optional status/search/sort filters + pagination
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const status = searchParams.get('status') || '';
   const page = parseInt(searchParams.get('page') || '1');
   const limit = parseInt(searchParams.get('limit') || '50');
   const search = searchParams.get('search') || '';
+  const sortValue = searchParams.get('sort') || ''; // 'value_asc' | 'value_desc'
 
   await connectDB();
 
@@ -18,10 +26,27 @@ export async function GET(request: Request) {
   if (status) query.status = status;
   if (search) query.username = { $regex: search, $options: 'i' };
 
-  const [items, total] = await Promise.all([
-    XList.find(query).sort({ addedAt: -1 }).skip((page - 1) * limit).limit(limit).lean(),
+  const [rawItems, total] = await Promise.all([
+    XList.find(query).lean(),
     XList.countDocuments(query),
   ]);
+
+  // Sort by numeric USD value in JS (stored as string)
+  let sorted = rawItems;
+  if (sortValue === 'value_asc' || sortValue === 'value_desc') {
+    sorted = [...rawItems].sort((a, b) => {
+      const aVal = parseUsd(a.usdValue || '');
+      const bVal = parseUsd(b.usdValue || '');
+      return sortValue === 'value_asc' ? aVal - bVal : bVal - aVal;
+    });
+  } else {
+    // Default: newest first
+    sorted = [...rawItems].sort((a, b) =>
+      new Date(b.addedAt).getTime() - new Date(a.addedAt).getTime()
+    );
+  }
+
+  const items = sorted.slice((page - 1) * limit, page * limit);
 
   return NextResponse.json({ items, total, page, limit });
 }

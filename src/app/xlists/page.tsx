@@ -1,6 +1,6 @@
 "use client";
 import { useState, useEffect, useCallback } from "react";
-import { Loader2, Search, ExternalLink, Copy, Check } from "lucide-react";
+import { Loader2, Search, ExternalLink, Copy, Check, ArrowUpDown, ArrowUp, ArrowDown } from "lucide-react";
 
 const STATUSES = ["all", "new", "pending", "chat", "done"];
 const STATUS_COLORS: Record<string, string> = {
@@ -29,7 +29,7 @@ function CopyButton({ text }: { text: string }) {
     setTimeout(() => setCopied(false), 1500);
   };
   return (
-    <button onClick={copy} className="ml-1.5 text-zinc-400 hover:text-zinc-600 cursor-pointer inline-flex items-center" title="Copy">
+    <button onClick={copy} className="ml-1.5 text-zinc-400 hover:text-zinc-600 cursor-pointer inline-flex items-center shrink-0" title="Copy">
       {copied ? <Check className="w-3.5 h-3.5 text-green-500" /> : <Copy className="w-3.5 h-3.5" />}
     </button>
   );
@@ -42,6 +42,7 @@ export default function XListPage() {
   const [status, setStatus] = useState("all");
   const [search, setSearch] = useState("");
   const [searchInput, setSearchInput] = useState("");
+  const [sortValue, setSortValue] = useState<"" | "value_asc" | "value_desc">("");
   const [loading, setLoading] = useState(true);
   const limit = 50;
 
@@ -50,12 +51,13 @@ export default function XListPage() {
     const params = new URLSearchParams({ page: String(page), limit: String(limit) });
     if (status !== "all") params.set("status", status);
     if (search) params.set("search", search);
+    if (sortValue) params.set("sort", sortValue);
     const res = await fetch(`/api/xlists?${params}`);
     const data = await res.json();
     setItems(data.items || []);
     setTotal(data.total || 0);
     setLoading(false);
-  }, [page, status, search]);
+  }, [page, status, search, sortValue]);
 
   useEffect(() => { fetchItems(); }, [fetchItems]);
 
@@ -68,6 +70,12 @@ export default function XListPage() {
     fetchItems();
   };
 
+  const toggleSort = () => {
+    setSortValue(prev => prev === "value_desc" ? "value_asc" : "value_desc");
+    setPage(1);
+  };
+
+  const SortIcon = sortValue === "value_desc" ? ArrowDown : sortValue === "value_asc" ? ArrowUp : ArrowUpDown;
   const totalPages = Math.ceil(total / limit);
 
   return (
@@ -92,17 +100,23 @@ export default function XListPage() {
             <button onClick={() => { setSearchInput(""); setSearch(""); setPage(1); }} className="text-zinc-400 hover:text-zinc-600 text-xs cursor-pointer">✕</button>
           )}
         </div>
+
+        {/* Status filters */}
         <div className="flex gap-1.5 flex-wrap">
           {STATUSES.map(s => (
-            <button
-              key={s}
-              onClick={() => { setStatus(s); setPage(1); }}
-              className={`px-3 py-2 rounded-xl text-xs font-medium capitalize transition-colors cursor-pointer ${status === s ? "bg-zinc-900 text-white" : "bg-white border border-zinc-200 text-zinc-600 hover:bg-zinc-50"}`}
-            >
+            <button key={s} onClick={() => { setStatus(s); setPage(1); }}
+              className={`px-3 py-2 rounded-xl text-xs font-medium capitalize transition-colors cursor-pointer ${status === s ? "bg-zinc-900 text-white" : "bg-white border border-zinc-200 text-zinc-600 hover:bg-zinc-50"}`}>
               {s}
             </button>
           ))}
         </div>
+
+        {/* Sort by value */}
+        <button onClick={toggleSort}
+          className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium border transition-colors cursor-pointer ${sortValue ? "bg-zinc-900 text-white border-zinc-900" : "bg-white border-zinc-200 text-zinc-600 hover:bg-zinc-50"}`}>
+          <SortIcon className="w-3.5 h-3.5" />
+          Sort by Value {sortValue === "value_desc" ? "(High→Low)" : sortValue === "value_asc" ? "(Low→High)" : ""}
+        </button>
       </div>
 
       {loading ? (
@@ -118,7 +132,11 @@ export default function XListPage() {
                     <th className="text-left px-4 py-3 font-medium">Username</th>
                     <th className="text-left px-4 py-3 font-medium">Category</th>
                     <th className="text-left px-4 py-3 font-medium">Wallet Address</th>
-                    <th className="text-left px-4 py-3 font-medium">USD Value</th>
+                    <th className="text-left px-4 py-3 font-medium cursor-pointer select-none" onClick={toggleSort}>
+                      <span className="flex items-center gap-1">
+                        USD Value <SortIcon className="w-3 h-3" />
+                      </span>
+                    </th>
                     <th className="text-left px-4 py-3 font-medium">Status</th>
                     <th className="text-left px-4 py-3 font-medium">X</th>
                   </tr>
@@ -149,11 +167,8 @@ export default function XListPage() {
                         ) : <span className="text-zinc-400">—</span>}
                       </td>
                       <td className="px-4 py-3">
-                        <select
-                          value={item.status}
-                          onChange={e => handleStatusChange(item._id, e.target.value)}
-                          className={`text-xs px-2 py-1 rounded-lg font-medium border-0 cursor-pointer ${STATUS_COLORS[item.status]} outline-none`}
-                        >
+                        <select value={item.status} onChange={e => handleStatusChange(item._id, e.target.value)}
+                          className={`text-xs px-2 py-1 rounded-lg font-medium border-0 cursor-pointer ${STATUS_COLORS[item.status]} outline-none`}>
                           {["new","pending","chat","done"].map(s => (
                             <option key={s} value={s}>{s}</option>
                           ))}
@@ -178,13 +193,9 @@ export default function XListPage() {
               <span>Page {page} of {totalPages} ({total.toLocaleString()} total)</span>
               <div className="flex gap-2">
                 <button disabled={page <= 1} onClick={() => setPage(p => p - 1)}
-                  className="px-3 py-1.5 rounded-lg border border-zinc-200 disabled:opacity-40 hover:bg-zinc-50 cursor-pointer">
-                  ← Prev
-                </button>
+                  className="px-3 py-1.5 rounded-lg border border-zinc-200 disabled:opacity-40 hover:bg-zinc-50 cursor-pointer">← Prev</button>
                 <button disabled={page >= totalPages} onClick={() => setPage(p => p + 1)}
-                  className="px-3 py-1.5 rounded-lg border border-zinc-200 disabled:opacity-40 hover:bg-zinc-50 cursor-pointer">
-                  Next →
-                </button>
+                  className="px-3 py-1.5 rounded-lg border border-zinc-200 disabled:opacity-40 hover:bg-zinc-50 cursor-pointer">Next →</button>
               </div>
             </div>
           )}
