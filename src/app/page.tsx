@@ -1,4 +1,4 @@
-import { ArrowRight, Search, Hash, MessageCircle, CheckCircle, XCircle, AlertCircle, Users } from "lucide-react";
+import { ArrowRight, Search, Hash, MessageCircle, CheckCircle, XCircle, AlertCircle, Users, List } from "lucide-react";
 import Link from 'next/link';
 
 const features = [
@@ -9,6 +9,15 @@ const features = [
     title: 'Candidate Pipeline',
     description: 'Track and manage candidates across pipeline stages.',
     label: 'Open Pipeline',
+    tier: 'No API required',
+  },
+  {
+    href: '/xlists',
+    icon: <List className="w-6 h-6" />,
+    color: 'teal',
+    title: 'X Lists',
+    description: 'View and manage imported X accounts with status tracking.',
+    label: 'Open X Lists',
     tier: 'No API required',
   },
   {
@@ -42,10 +51,12 @@ const features = [
 
 const colorMap: Record<string, { bg: string; text: string; hover: string }> = {
   indigo: { bg: 'bg-indigo-50', text: 'text-indigo-500', hover: 'text-indigo-500' },
+  teal:   { bg: 'bg-teal-50',   text: 'text-teal-500',   hover: 'text-teal-500'   },
   blue:   { bg: 'bg-blue-50',   text: 'text-blue-500',   hover: 'text-blue-500'   },
   purple: { bg: 'bg-purple-50', text: 'text-purple-500', hover: 'text-purple-500' },
   green:  { bg: 'bg-green-50',  text: 'text-green-500',  hover: 'text-green-500'  },
 };
+
 
 export default function Home() {
   return (
