@@ -56,8 +56,8 @@ export default function CandidatesPage() {
   }
 
   return (
-    <div className="p-8 animate-in fade-in duration-500">
-      <div className="flex items-center justify-between mb-8">
+    <div className="p-8 animate-in fade-in duration-500 flex flex-col flex-1 min-h-0">
+      <div className="flex items-center justify-between mb-6 shrink-0">
         <div>
           <h1 className="text-2xl font-bold">Candidate Pipeline</h1>
           <p className="text-zinc-500 text-sm mt-1">{candidates.length} candidate{candidates.length !== 1 ? 's' : ''} tracked</p>
@@ -80,13 +80,13 @@ export default function CandidatesPage() {
           </Link>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 flex-1 min-h-0 min-h-[500px]">
           {STATUSES.map(col => {
             const colCandidates = candidates.filter(c => c.status === col.key);
             const Icon = col.icon;
             return (
-              <div key={col.key} className={`rounded-2xl border ${BADGE_STYLES[col.key]} p-4`}>
-                <div className={`flex items-center gap-2 mb-4 font-semibold ${ICON_STYLES[col.key]}`}>
+              <div key={col.key} className={`rounded-2xl border ${BADGE_STYLES[col.key]} p-4 flex flex-col min-h-0`}>
+                <div className={`flex items-center gap-2 mb-4 font-semibold ${ICON_STYLES[col.key]} shrink-0`}>
                   <Icon className="w-4 h-4" />
                   {col.label}
                   <span className="ml-auto bg-white rounded-full px-2 py-0.5 text-xs text-zinc-600 font-medium shadow-sm">
@@ -94,7 +94,7 @@ export default function CandidatesPage() {
                   </span>
                 </div>
 
-                <div className="space-y-3">
+                <div className="space-y-3 overflow-y-auto pr-2 flex-1 pb-2">
                   {colCandidates.length === 0 && (
                     <div className="text-xs text-center text-zinc-400 py-6">No candidates here</div>
                   )}
@@ -123,13 +123,13 @@ export default function CandidatesPage() {
                         {col.key === 'new' && (
                           <button onClick={() => handleStatusChange(c.id, 'pending')}
                             className="text-xs px-2.5 py-1 rounded-lg bg-amber-100 text-amber-700 hover:bg-amber-200 transition-colors cursor-pointer">
-                            → Pending
+                            Send DM
                           </button>
                         )}
                         {col.key === 'pending' && (
                           <button onClick={() => handleStatusChange(c.id, 'chat')}
                             className="text-xs px-2.5 py-1 rounded-lg bg-green-100 text-green-700 hover:bg-green-200 transition-colors cursor-pointer">
-                            → Chatting
+                            Replied (Move to Chat)
                           </button>
                         )}
                         {col.key === 'chat' && (
@@ -139,8 +139,8 @@ export default function CandidatesPage() {
                           </Link>
                         )}
                         <button onClick={() => handleDelete(c.id)}
-                          className="text-xs px-2.5 py-1 rounded-lg bg-red-50 text-red-400 hover:bg-red-100 transition-colors ml-auto cursor-pointer">
-                          <Trash2 className="w-3 h-3" />
+                          className="text-xs px-2.5 py-1 rounded-lg bg-red-50 text-red-100 hover:bg-red-200 hover:text-red-600 transition-colors ml-auto cursor-pointer">
+                          <Trash2 className="w-3 h-3 text-red-400" />
                         </button>
                       </div>
 
