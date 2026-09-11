@@ -13,8 +13,8 @@ const cached = globalWithMongoose.mongoose;
 
 export async function connectDB() {
   // Check at runtime only — MONGODB_URL is not available at build time
-  const uri = process.env.MONGODB_URL || process.env.MONGODB_URI || '';
-  if (!uri) throw new Error('MONGODB_URL env var is not set');
+  const uri = process.env.MONGODB_URL || process.env.MONGODB_URI || process.env.MONGO_URL || '';
+  if (!uri) throw new Error('MONGODB_URL / MONGO_URL env var is not set');
 
   if (cached.conn) return cached.conn;
 
