@@ -1,7 +1,94 @@
 "use client";
 import { useState, useEffect } from 'react';
-import { Users, Loader2, MessageCircle, Clock, Trash2, Search } from 'lucide-react';
+import { Users, Loader2, MessageCircle, Clock, Trash2, Search, Plus, X, ExternalLink } from 'lucide-react';
 import Link from 'next/link';
+
+function XListPickerModal({ onClose, onAdd }: { onClose: () => void, onAdd: (c: any) => void }) {
+  const [items, setItems] = useState<any[]>([]);
+  const [search, setSearch] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [addingId, setAddingId] = useState<string | null>(null);
+
+  useEffect(() => {
+    const fetchItems = async () => {
+      setLoading(true);
+      const res = await fetch(`/api/xlists?limit=30&search=${search}`);
+      const data = await res.json();
+      setItems(data.items || []);
+      setLoading(false);
+    };
+    const t = setTimeout(fetchItems, search ? 300 : 0);
+    return () => clearTimeout(t);
+  }, [search]);
+
+  const handleAdd = async (item: any) => {
+    setAddingId(item._id);
+    const res = await fetch("/api/candidates", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        username: item.username,
+        name: item.username,
+        description: item.category ? `Category: ${item.category}\nWallet: ${item.walletAddress || 'None'}\nValue: ${item.usdValue || 'None'}` : "",
+      }),
+    });
+    if (res.ok) {
+      onAdd(await res.json());
+    }
+    setAddingId(null);
+  };
+
+  return (
+    <div className="fixed inset-0 bg-zinc-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl w-full max-w-lg shadow-xl overflow-hidden flex flex-col max-h-[85vh]">
+        <div className="flex items-center justify-between p-4 border-b border-zinc-100">
+          <h2 className="font-bold text-lg">Add from X Lists</h2>
+          <button onClick={onClose} className="p-2 -mr-2 text-zinc-400 hover:text-zinc-600 rounded-lg cursor-pointer transition-colors"><X className="w-5 h-5"/></button>
+        </div>
+        
+        <div className="p-4 border-b border-zinc-100 bg-zinc-50 w-full shrink-0">
+          <div className="flex items-center gap-2 bg-white border border-zinc-200 rounded-xl px-3 py-2 w-full shadow-sm">
+            <Search className="w-4 h-4 text-zinc-400 shrink-0" />
+            <input
+              autoFocus
+              className="outline-none text-sm w-full bg-transparent"
+              placeholder="Search username in X Lists..."
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+            />
+          </div>
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-4 space-y-2 relative">
+          {loading ? (
+            <div className="py-20 flex justify-center"><Loader2 className="w-6 h-6 animate-spin text-zinc-400" /></div>
+          ) : items.length === 0 ? (
+            <div className="py-12 text-center text-zinc-400 text-sm">No accounts found</div>
+          ) : (
+            items.map(item => (
+              <div key={item._id} className="flex items-center gap-3 p-3 rounded-xl border border-zinc-100 hover:border-zinc-200 transition-colors bg-white">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <p className="font-semibold text-sm truncate">@{item.username}</p>
+                    {item.status === 'done' && <span className="px-1.5 py-0.5 rounded text-[10px] uppercase font-bold bg-zinc-100 text-zinc-500">Done</span>}
+                  </div>
+                  <p className="text-xs text-zinc-500 truncate mt-0.5">{item.category || "No category"} • {item.usdValue || "No value"}</p>
+                </div>
+                <button
+                  onClick={() => handleAdd(item)}
+                  disabled={addingId === item._id}
+                  className="shrink-0 p-2 text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50 rounded-lg cursor-pointer transition-colors"
+                >
+                  {addingId === item._id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
+                </button>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
 
 const STATUSES = [
   { key: 'new',     label: 'In Pipeline', icon: Users,          color: 'blue'   },
@@ -24,6 +111,7 @@ const ICON_STYLES: Record<string, string> = {
 export default function CandidatesPage() {
   const [candidates, setCandidates] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [pickerOpen, setPickerOpen] = useState(false);
 
   useEffect(() => { fetchCandidates(); }, []);
 
@@ -89,9 +177,16 @@ export default function CandidatesPage() {
                 <div className={`flex items-center gap-2 mb-4 font-semibold ${ICON_STYLES[col.key]} shrink-0`}>
                   <Icon className="w-4 h-4" />
                   {col.label}
-                  <span className="ml-auto bg-white rounded-full px-2 py-0.5 text-xs text-zinc-600 font-medium shadow-sm">
-                    {colCandidates.length}
-                  </span>
+                  <div className="ml-auto flex items-center gap-2">
+                    {col.key === 'new' && (
+                      <button onClick={() => setPickerOpen(true)} className="p-1 hover:bg-zinc-100 rounded-md transition-colors text-zinc-400 cursor-pointer" title="Add from X Lists">
+                        <Plus className="w-4 h-4 text-zinc-600" />
+                      </button>
+                    )}
+                    <span className="bg-white rounded-full px-2 py-0.5 text-xs text-zinc-600 font-medium shadow-sm">
+                      {colCandidates.length}
+                    </span>
+                  </div>
                 </div>
 
                 <div className="space-y-3 overflow-y-auto pr-2 flex-1 pb-2">
@@ -121,10 +216,16 @@ export default function CandidatesPage() {
                       {/* Status transition buttons */}
                       <div className="flex gap-1.5 flex-wrap">
                         {col.key === 'new' && (
-                          <button onClick={() => handleStatusChange(c.id, 'pending')}
-                            className="text-xs px-2.5 py-1 rounded-lg bg-amber-100 text-amber-700 hover:bg-amber-200 transition-colors cursor-pointer">
-                            Send DM
-                          </button>
+                          <>
+                            <button onClick={() => handleStatusChange(c.id, 'pending')}
+                              className="text-xs px-2.5 py-1 rounded-lg bg-amber-100 text-amber-700 hover:bg-amber-200 transition-colors cursor-pointer">
+                              Send DM
+                            </button>
+                            <a href={`https://x.com/${c.username}`} target="_blank" rel="noopener noreferrer"
+                              className="text-xs px-2 py-1 rounded-lg bg-zinc-100 text-zinc-500 hover:bg-zinc-200 transition-colors flex items-center shrink-0 cursor-pointer" title="View Profile">
+                              <ExternalLink className="w-3.5 h-3.5" />
+                            </a>
+                          </>
                         )}
                         {col.key === 'pending' && (
                           <button onClick={() => handleStatusChange(c.id, 'chat')}
@@ -154,6 +255,13 @@ export default function CandidatesPage() {
             );
           })}
         </div>
+      )}
+
+      {pickerOpen && (
+        <XListPickerModal
+          onClose={() => setPickerOpen(false)}
+          onAdd={() => fetchCandidates()}
+        />
       )}
     </div>
   );
