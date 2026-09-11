@@ -138,12 +138,11 @@ export default function XListPage() {
                       </span>
                     </th>
                     <th className="text-left px-4 py-3 font-medium">Status</th>
-                    <th className="text-left px-4 py-3 font-medium">X</th>
                   </tr>
                 </thead>
                 <tbody>
                   {items.length === 0 && (
-                    <tr><td colSpan={7} className="text-center py-16 text-zinc-400">No records found</td></tr>
+                    <tr><td colSpan={6} className="text-center py-16 text-zinc-400">No records found</td></tr>
                   )}
                   {items.map((item, i) => (
                     <tr key={item._id} className="border-b border-zinc-50 hover:bg-zinc-50 transition-colors">
@@ -173,12 +172,6 @@ export default function XListPage() {
                             <option key={s} value={s}>{s}</option>
                           ))}
                         </select>
-                      </td>
-                      <td className="px-4 py-3">
-                        <a href={item.xUrl} target="_blank" rel="noopener noreferrer"
-                          className="inline-flex items-center gap-1 text-xs text-blue-500 hover:text-blue-700">
-                          <ExternalLink className="w-3 h-3" />
-                        </a>
                       </td>
                     </tr>
                   ))}
