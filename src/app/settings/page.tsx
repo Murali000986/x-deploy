@@ -1,6 +1,6 @@
 "use client";
-import { useState, useEffect } from 'react';
-import { Settings, CheckCircle, XCircle, Loader2, RefreshCw, Key, ExternalLink, Bot, Activity } from 'lucide-react';
+import { useState, useEffect, useCallback } from 'react';
+import { Settings, CheckCircle, XCircle, Loader2, RefreshCw, Key, ExternalLink, Bot, Activity, Users, Plus, Trash2, LogIn } from 'lucide-react';
 
 const CREDENTIAL_LABELS: Record<string, { label: string; description: string; tested?: boolean }> = {
   bearer_token:  { label: 'Bearer Token',  description: 'Read-only access — user lookup, tweet search', tested: true },
@@ -38,8 +38,18 @@ function RateLimitBar({ rateLimit }: { rateLimit: any }) {
 export default function SettingsPage() {
   const [status, setStatus] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [accounts, setAccounts] = useState<any[]>([]);
+  const [acctLoading, setAcctLoading] = useState(true);
+  const [acctMsg, setAcctMsg] = useState('');
 
-  const fetchStatus = async () => {
+  // Read success/error from URL params on mount
+  useEffect(() => {
+    const p = new URLSearchParams(window.location.search);
+    if (p.get('success')) setAcctMsg('✅ ' + p.get('success'));
+    if (p.get('error')) setAcctMsg('❌ ' + p.get('error'));
+  }, []);
+
+  const fetchStatus = useCallback(async () => {
     setLoading(true);
     try {
       const res = await fetch('/api/settings/status');
@@ -47,13 +57,35 @@ export default function SettingsPage() {
     } finally {
       setLoading(false);
     }
+  }, []);
+
+  const fetchAccounts = useCallback(async () => {
+    setAcctLoading(true);
+    try {
+      const res = await fetch('/api/accounts');
+      const data = await res.json();
+      setAccounts(data.accounts ?? []);
+    } finally {
+      setAcctLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { fetchStatus(); fetchAccounts(); }, [fetchStatus, fetchAccounts]);
+
+  const switchAccount = async (id: string) => {
+    await fetch('/api/accounts/switch', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id }) });
+    fetchAccounts();
   };
 
-  useEffect(() => { fetchStatus(); }, []);
+  const removeAccount = async (id: string) => {
+    await fetch(`/api/accounts?id=${id}`, { method: 'DELETE' });
+    fetchAccounts();
+  };
 
   // Extract bot info from access_token result
   const botUsername = status?.access_token?.botUsername;
   const botName = status?.access_token?.botName;
+
 
   return (
     <div className="p-8 max-w-3xl mx-auto space-y-6 animate-in fade-in duration-500">
@@ -152,6 +184,70 @@ export default function SettingsPage() {
           })}
         </div>
       ) : null}
+
+      {/* Connected Accounts */}
+      <div className="bg-white border border-zinc-200 rounded-2xl p-5 shadow-sm space-y-4">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2 font-semibold text-sm text-zinc-800">
+            <Users className="w-4 h-4" />
+            Connected X Accounts
+          </div>
+          <a
+            href="/api/auth/x/login"
+            className="flex items-center gap-1.5 px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium rounded-xl transition-colors cursor-pointer"
+          >
+            <Plus className="w-3.5 h-3.5" /> Add Account
+          </a>
+        </div>
+
+        {acctMsg && (
+          <p className={`text-xs px-3 py-2 rounded-lg ${acctMsg.startsWith('✅') ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-600'}`}>
+            {acctMsg}
+          </p>
+        )}
+
+        {acctLoading ? (
+          <div className="flex justify-center py-4"><Loader2 className="w-5 h-5 animate-spin text-zinc-400" /></div>
+        ) : accounts.length === 0 ? (
+          <div className="text-center py-6 text-zinc-400 text-sm">
+            <LogIn className="w-8 h-8 mx-auto mb-2 opacity-40" />
+            <p>No accounts connected via OAuth.</p>
+            <p className="text-xs mt-1 text-zinc-400">The .env credentials are still active as fallback.</p>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {accounts.map((acc: any) => (
+              <div key={acc._id} className={`flex items-center gap-3 p-3 rounded-xl border transition-all ${acc.isActive ? 'border-green-200 bg-green-50' : 'border-zinc-100 bg-zinc-50'}`}>
+                {acc.profileImageUrl
+                  ? <img src={acc.profileImageUrl} alt="" className="w-9 h-9 rounded-full shrink-0" />
+                  : <div className="w-9 h-9 rounded-full bg-zinc-200 flex items-center justify-center text-xs font-bold text-zinc-500 shrink-0">{acc.name?.[0] ?? '?'}</div>
+                }
+                <div className="flex-1 min-w-0">
+                  <p className="font-semibold text-sm truncate">{acc.name}</p>
+                  <p className="text-xs text-zinc-500">@{acc.username}</p>
+                </div>
+                {acc.isActive && (
+                  <span className="text-[10px] font-semibold text-green-700 bg-green-100 px-2 py-0.5 rounded-full">Active</span>
+                )}
+                {!acc.isActive && (
+                  <button
+                    onClick={() => switchAccount(acc._id)}
+                    className="text-xs px-3 py-1.5 rounded-lg border border-blue-200 text-blue-600 hover:bg-blue-50 transition-colors cursor-pointer font-medium"
+                  >
+                    Switch
+                  </button>
+                )}
+                <button
+                  onClick={() => removeAccount(acc._id)}
+                  className="p-1.5 text-zinc-400 hover:text-red-500 transition-colors rounded-lg hover:bg-red-50 cursor-pointer"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
 
       {/* Credits & Billing Links */}
       <div className="bg-zinc-50 border border-zinc-200 rounded-2xl p-5 space-y-4">

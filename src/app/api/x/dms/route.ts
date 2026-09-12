@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { TwitterApi } from 'twitter-api-v2';
+import { getActiveClient } from '@/lib/xClient';
 
 export const dynamic = 'force-dynamic';
 
@@ -11,12 +11,7 @@ export async function GET() {
       return NextResponse.json({ data: [], includes: { users: [] }, _warning: 'X API credentials missing.' });
     }
 
-    const client = new TwitterApi({
-      appKey: X_API_KEY,
-      appSecret: X_API_SECRET,
-      accessToken: X_ACCESS_TOKEN,
-      accessSecret: X_ACCESS_SECRET,
-    });
+    const client = await getActiveClient();
 
     const me = await client.v2.me();
     const myId = me.data.id;
@@ -56,7 +51,7 @@ export async function GET() {
       console.warn('v1.1 failed, using v2:', v1Error?.data?.title ?? v1Error?.message);
     }
 
-    // ATTEMPT 2: v2 fallback (only sent messages, but better than nothing)
+    // ATTEMPT 2: v2 fallback
     if (!v1Success) {
       try {
         const eventsRaw = await (client.v2 as any).get('dm_events', {
@@ -75,7 +70,6 @@ export async function GET() {
           }
         }
 
-        // Try to get full threads (both sides) per conversation
         const convIds = [...new Set(events.map((e: any) => e.dm_conversation_id).filter(Boolean))];
         for (const convId of convIds) {
           try {
@@ -99,18 +93,15 @@ export async function GET() {
       }
     }
 
-    // Collect all unique partner IDs from messages (from convId "A-B", pick the one != myId)
+    // Collect all unique partner IDs and bulk-fetch profiles
     const partnerIds = new Set<string>();
     allMessages.forEach(msg => {
-      // From convId
       const parts = (msg.dm_conversation_id ?? '').split('-');
       parts.forEach((p: string) => { if (p && p !== myId) partnerIds.add(p); });
-      // From explicit fields
       if (msg.sender_id && msg.sender_id !== myId) partnerIds.add(msg.sender_id);
       if (msg.recipient_id && msg.recipient_id !== myId) partnerIds.add(msg.recipient_id);
     });
 
-    // Bulk-fetch user profiles for all partners we found
     if (partnerIds.size > 0) {
       try {
         const usersRes = await client.v2.users([...partnerIds], {
@@ -122,7 +113,6 @@ export async function GET() {
       }
     }
 
-    // Always include bot's own profile
     userMap[myId] = {
       id: myId,
       name: me.data.name,
