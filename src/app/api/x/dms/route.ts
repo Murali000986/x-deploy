@@ -8,9 +8,7 @@ export async function GET() {
     const { X_API_KEY, X_API_SECRET, X_ACCESS_TOKEN, X_ACCESS_SECRET } = process.env;
 
     if (!X_API_KEY || !X_API_SECRET || !X_ACCESS_TOKEN || !X_ACCESS_SECRET) {
-      return NextResponse.json({
-        data: [], includes: { users: [] }, _warning: 'X API credentials missing.'
-      });
+      return NextResponse.json({ data: [], includes: { users: [] }, _warning: 'X API credentials missing.' });
     }
 
     const client = new TwitterApi({
@@ -24,74 +22,48 @@ export async function GET() {
     const me = await client.v2.me();
     const myId = me.data.id;
 
-    // Step 1: Get sent DM events to discover conversation IDs
-    const sentEvents = await client.v2.listDmEvents({
-      event_types: 'MessageCreate',
-      'dm_event.fields': ['dm_conversation_id', 'sender_id'] as any,
-      max_results: 50 as any,
+    // Fetch DM events using direct client request (more reliable than wrapper)
+    const eventsRaw = await (client.v2 as any).get('dm_events', {
+      'dm_event.fields': 'text,sender_id,created_at,dm_conversation_id',
+      'expansions': 'sender_id',
+      'user.fields': 'username,name,profile_image_url',
+      'max_results': '50',
     });
-    const sentData: any[] = (sentEvents as any)._realData?.data ?? [];
 
-    const convIds = [...new Set(sentData.map((e: any) => e.dm_conversation_id).filter(Boolean))];
+    const events: any[] = eventsRaw?.data ?? [];
+    const userMap: Record<string, any> = {};
+    (eventsRaw?.includes?.users ?? []).forEach((u: any) => { userMap[u.id] = u; });
+
+    // Get unique conversation IDs from events
+    const convIds = [...new Set(events.map((e: any) => e.dm_conversation_id).filter(Boolean))];
 
     if (convIds.length === 0) {
-      return NextResponse.json({ data: [], includes: { users: [] }, _myId: myId });
+      // No conversations found from sent messages — return what we have
+      return NextResponse.json({ data: events, includes: { users: Object.values(userMap) }, _myId: myId });
     }
 
-    // Step 2: Fetch ALL messages (both sides) for each conversation thread
+    // Fetch full threads (both sides) per conversation
     const allMessages: any[] = [];
-    const userMap: Record<string, any> = {};
 
     for (const convId of convIds) {
       try {
-        // GET /2/dm_conversations/:id/dm_events returns BOTH sent AND received messages
-        const res = await fetch(
-          `https://api.twitter.com/2/dm_conversations/${convId}/dm_events?event_types=MessageCreate&dm_event.fields=text,sender_id,created_at,dm_conversation_id&expansions=sender_id&user.fields=username,name,profile_image_url&max_results=50`,
-          {
-            headers: {
-              Authorization: `Bearer ${process.env.X_BEARER_TOKEN || ''}`,
-            },
-          }
-        );
+        const threadRaw = await (client.v2 as any).get(`dm_conversations/${convId}/dm_events`, {
+          'dm_event.fields': 'text,sender_id,created_at,dm_conversation_id',
+          'expansions': 'sender_id',
+          'user.fields': 'username,name,profile_image_url',
+          'max_results': '50',
+        });
 
-        // Bearer token may not work for DMs; fallback to OAuth 1.0a via twitter-api-v2
-        const raw = res.ok ? await res.json() : null;
-
-        if (!raw || !res.ok) {
-          // Fallback: use twitter-api-v2 client with OAuth 1.0a
-          const convEvents = await (client.v2 as any).request(
-            'GET',
-            `dm_conversations/${convId}/dm_events`,
-            {
-              query: {
-                event_types: 'MessageCreate',
-                'dm_event.fields': 'text,sender_id,created_at,dm_conversation_id',
-                expansions: 'sender_id',
-                'user.fields': 'username,name,profile_image_url',
-                max_results: '50',
-              },
-            }
-          );
-          if (convEvents?.data) {
-            convEvents.data.forEach((msg: any) => {
-              allMessages.push({ ...msg, dm_conversation_id: convId });
-            });
-          }
-          if (convEvents?.includes?.users) {
-            convEvents.includes.users.forEach((u: any) => { userMap[u.id] = u; });
-          }
-        } else {
-          if (raw?.data) {
-            raw.data.forEach((msg: any) => {
-              allMessages.push({ ...msg, dm_conversation_id: convId });
-            });
-          }
-          if (raw?.includes?.users) {
-            raw.includes.users.forEach((u: any) => { userMap[u.id] = u; });
-          }
-        }
+        (threadRaw?.data ?? []).forEach((msg: any) => {
+          allMessages.push({ ...msg, dm_conversation_id: convId });
+        });
+        (threadRaw?.includes?.users ?? []).forEach((u: any) => { userMap[u.id] = u; });
       } catch (e: any) {
-        console.warn(`Failed to fetch thread ${convId}:`, e?.message);
+        console.warn(`Thread fetch failed for ${convId}:`, e?.message);
+        // Fallback: include the original sent message at least
+        events
+          .filter((e: any) => e.dm_conversation_id === convId)
+          .forEach((msg: any) => allMessages.push(msg));
       }
     }
 
@@ -102,12 +74,12 @@ export async function GET() {
     });
 
   } catch (error: any) {
-    console.error("X API DMs Error:", error?.data ?? error?.message);
-    const isAuthError = error.code === 401 || error.code === 403;
-    if (isAuthError) {
+    console.error('DM fetch error:', error?.data ?? error?.message);
+    const isAuth = error.code === 401 || error.code === 403;
+    if (isAuth) {
       return NextResponse.json({
         data: [], includes: { users: [] },
-        _warning: '⚠️ DM permissions missing. Ensure "Read and write and Direct message" is set in X Dev Portal.'
+        _warning: '⚠️ DM permissions missing. Set "Read and write and Direct message" in X Dev Portal and regenerate tokens.'
       });
     }
     return NextResponse.json({ error: error.message }, { status: 500 });
