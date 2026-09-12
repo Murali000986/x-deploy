@@ -6,10 +6,11 @@ export default function ChatPage() {
   const [loading, setLoading] = useState(true);
   const [messages, setMessages] = useState<any[]>([]);
   const [users, setUsers] = useState<Record<string, any>>({});
+  const [myId, setMyId] = useState<string>('');
   const [error, setError] = useState('');
   const [sendError, setSendError] = useState('');
   const [dmWarning, setDmWarning] = useState('');
-  const [selectedUser, setSelectedUser] = useState<string | null>(null);
+  const [selectedPartnerId, setSelectedPartnerId] = useState<string | null>(null);
   const [replyText, setReplyText] = useState('');
   const [sending, setSending] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -18,7 +19,7 @@ export default function ChatPage() {
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [selectedUser, messages]);
+  }, [selectedPartnerId, messages]);
 
   const fetchDMs = async () => {
     setLoading(true);
@@ -27,6 +28,7 @@ export default function ChatPage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to fetch DMs');
       setMessages(data.data || []);
+      setMyId(data._myId || '');
       if (data._warning) setDmWarning(data._warning);
       const userMap: Record<string, any> = {};
       if (data.includes?.users) {
@@ -40,16 +42,33 @@ export default function ChatPage() {
     }
   };
 
+  // Group messages by conversation partner (the person who is NOT us)
+  const getPartnerId = (msg: any): string => {
+    if (msg.sender_id !== myId) return msg.sender_id;
+    const participants: string[] = msg.participant_ids ?? [];
+    return participants.find((id: string) => id !== myId) ?? msg.sender_id;
+  };
+
+  const conversationMap: Record<string, any[]> = {};
+  messages.forEach(msg => {
+    const partnerId = getPartnerId(msg);
+    if (!conversationMap[partnerId]) conversationMap[partnerId] = [];
+    conversationMap[partnerId].push(msg);
+  });
+  const partners = Object.keys(conversationMap);
+
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!replyText.trim() || !selectedUser) return;
+    if (!replyText.trim() || !selectedPartnerId) return;
+    const partnerUser = users[selectedPartnerId];
+    if (!partnerUser?.username) return;
     setSending(true);
     setSendError('');
     try {
-      const res = await fetch(`/api/x/dms/${selectedUser}`, {
+      const res = await fetch('/api/dm', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: replyText })
+        body: JSON.stringify({ username: partnerUser.username, text: replyText })
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to send message');
@@ -61,9 +80,6 @@ export default function ChatPage() {
       setSending(false);
     }
   };
-
-  const conversationPartners = Array.from(new Set(messages.map(m => m.sender_id)));
-  const getMessagesWithUser = (uid: string) => messages.filter(m => m.sender_id === uid);
 
   const Avatar = ({ user }: { user: any }) => (
     user?.profile_image_url
@@ -93,28 +109,31 @@ export default function ChatPage() {
         </div>
         {dmWarning && (
           <div className="p-3 bg-amber-50 border-b border-amber-100 text-amber-700 text-xs leading-snug">
-            ⚠️ DMs need <strong>Consumer Keys</strong> (API Key + Secret) from X Dev Portal.
+            {dmWarning}
           </div>
         )}
         <div className="flex-1 overflow-y-auto">
           {error ? (
             <div className="p-4 text-center text-red-500 text-sm mt-10">{error}</div>
-          ) : conversationPartners.length === 0 ? (
+          ) : partners.length === 0 ? (
             <div className="p-4 text-center text-zinc-500 text-sm mt-10">No conversations found.</div>
           ) : (
-            conversationPartners.map(senderId => {
-              const user = users[senderId] || { name: 'Unknown', username: senderId };
-              const lastMsg = messages.find(m => m.sender_id === senderId);
+            partners.map(partnerId => {
+              const user = users[partnerId] || { name: 'Unknown', username: partnerId };
+              const msgs = conversationMap[partnerId];
+              const lastMsg = msgs[msgs.length - 1];
               return (
                 <button
-                  key={senderId}
-                  onClick={() => setSelectedUser(senderId)}
-                  className={`w-full p-4 border-b border-zinc-100 flex items-center gap-3 hover:bg-zinc-50 transition-colors text-left ${selectedUser === senderId ? 'bg-green-50' : ''}`}
+                  key={partnerId}
+                  onClick={() => setSelectedPartnerId(partnerId)}
+                  className={`w-full p-4 border-b border-zinc-100 flex items-center gap-3 hover:bg-zinc-50 transition-colors text-left ${selectedPartnerId === partnerId ? 'bg-green-50' : ''}`}
                 >
                   <Avatar user={user} />
                   <div className="flex-1 overflow-hidden">
                     <p className="font-semibold text-sm truncate">{user.name}</p>
-                    <p className="text-xs text-zinc-400 truncate">{lastMsg?.text ?? ''}</p>
+                    <p className="text-xs text-zinc-400 truncate">
+                      {lastMsg?.sender_id === myId ? '↗ ' : ''}{lastMsg?.text ?? ''}
+                    </p>
                   </div>
                 </button>
               );
@@ -125,25 +144,30 @@ export default function ChatPage() {
 
       {/* Chat Area */}
       <div className="flex-1 bg-zinc-50 flex flex-col overflow-hidden">
-        {selectedUser ? (
+        {selectedPartnerId ? (
           <>
             <div className="p-4 border-b border-zinc-200 bg-white flex items-center gap-3 shadow-sm shrink-0">
-              <Avatar user={users[selectedUser]} />
+              <Avatar user={users[selectedPartnerId]} />
               <div>
-                <h3 className="font-bold">{users[selectedUser]?.name || 'Unknown'}</h3>
-                <p className="text-sm text-zinc-500">@{users[selectedUser]?.username || selectedUser}</p>
+                <h3 className="font-bold">{users[selectedPartnerId]?.name || 'Unknown'}</h3>
+                <p className="text-sm text-zinc-500">@{users[selectedPartnerId]?.username || selectedPartnerId}</p>
               </div>
             </div>
 
             <div className="flex-1 p-6 overflow-y-auto space-y-3">
-              {getMessagesWithUser(selectedUser).map((msg: any) => (
-                <div key={msg.id} className="flex">
-                  <div className="bg-white p-4 rounded-2xl rounded-tl-sm max-w-md shadow-sm border border-zinc-100">
-                    <p className="text-sm text-zinc-800">{msg.text}</p>
-                    <p className="text-[10px] text-zinc-400 mt-1">{new Date(msg.created_at).toLocaleString()}</p>
+              {(conversationMap[selectedPartnerId] ?? []).map((msg: any) => {
+                const isMine = msg.sender_id === myId;
+                return (
+                  <div key={msg.id} className={`flex ${isMine ? 'justify-end' : 'justify-start'}`}>
+                    <div className={`p-3 rounded-2xl max-w-md shadow-sm text-sm ${isMine ? 'bg-blue-600 text-white rounded-br-sm' : 'bg-white border border-zinc-100 text-zinc-800 rounded-bl-sm'}`}>
+                      <p>{msg.text}</p>
+                      <p className={`text-[10px] mt-1 ${isMine ? 'text-blue-200' : 'text-zinc-400'}`}>
+                        {new Date(msg.created_at).toLocaleTimeString()}
+                      </p>
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
               <div ref={messagesEndRef} />
             </div>
 
