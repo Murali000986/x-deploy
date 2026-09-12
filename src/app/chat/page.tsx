@@ -43,28 +43,44 @@ export default function ChatPage() {
     }
   };
 
-  // Group messages by dm_conversation_id
-  const convById: Record<string, any[]> = {};
+  // Group messages by conversation partner (the person who is NOT us)
+  const conversationMap: Record<string, { msgs: any[], partnerId: string }> = {};
+
   messages.forEach(msg => {
+    // 1. Find who the other participant is. If we sent it, it's NOT us. If they sent it, it's their id.
+    // However, participant_ids doesn't exist, so we depend on the sender_id.
+    // If msg is sent by us (myId), we can't tell the recipient from the message alone UNLESS we look at other messages in the same dm_conversation_id.
     const cid = msg.dm_conversation_id ?? msg.sender_id;
-    if (!convById[cid]) convById[cid] = [];
-    convById[cid].push(msg);
+    // We group by simple cid temporarily:
+    if (!conversationMap[cid]) conversationMap[cid] = { msgs: [], partnerId: '' };
+    conversationMap[cid].msgs.push(msg);
   });
 
-  // For each conversation, find the partner (any sender who isn't me)
-  const conversationMap: Record<string, { msgs: any[], partnerId: string }> = {};
-  Object.entries(convById).forEach(([cid, msgs]) => {
-    const partnerId = msgs.find(m => m.sender_id !== myId)?.sender_id
-      ?? msgs[0]?.sender_id;
+  // 2. Discover partnerId for each conversation & swap map to be keyed by partnerId so we merge threads!
+  const mergedByPartner: Record<string, { msgs: any[], partnerId: string }> = {};
+
+  Object.values(conversationMap).forEach(conv => {
+    // Partner is the first sender_id that isn't us
+    const partnerId = conv.msgs.find(m => m.sender_id !== myId)?.sender_id ?? conv.msgs[0]?.sender_id;
     if (!partnerId) return;
-    conversationMap[cid] = { msgs, partnerId };
+
+    if (!mergedByPartner[partnerId]) {
+      mergedByPartner[partnerId] = { msgs: [], partnerId };
+    }
+    mergedByPartner[partnerId].msgs.push(...conv.msgs);
   });
-  const convIds = Object.keys(conversationMap);
+
+  // Sort messages within each merged conversation
+  Object.values(mergedByPartner).forEach(conv => {
+    conv.msgs.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+  });
+
+  const partnerIds = Object.keys(mergedByPartner);
 
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!replyText.trim() || !selectedPartnerId) return;
-    const conv = conversationMap[selectedPartnerId];
+    const conv = mergedByPartner[selectedPartnerId];
     const partnerUser = conv ? users[conv.partnerId] : null;
     if (!partnerUser?.username) {
       setSendError('Cannot find partner username to send DM.');
@@ -123,18 +139,18 @@ export default function ChatPage() {
         <div className="flex-1 overflow-y-auto">
           {error ? (
             <div className="p-4 text-center text-red-500 text-sm mt-10">{error}</div>
-          ) : convIds.length === 0 ? (
+          ) : partnerIds.length === 0 ? (
             <div className="p-4 text-center text-zinc-500 text-sm mt-10">No conversations found.</div>
           ) : (
-            convIds.map(cid => {
-              const { msgs, partnerId } = conversationMap[cid];
+            partnerIds.map(pid => {
+              const { msgs, partnerId } = mergedByPartner[pid];
               const user = users[partnerId] || { name: 'Unknown', username: partnerId };
               const lastMsg = msgs[msgs.length - 1];
               return (
                 <button
-                  key={cid}
-                  onClick={() => setSelectedPartnerId(cid)}
-                  className={`w-full p-4 border-b border-zinc-100 flex items-center gap-3 hover:bg-zinc-50 transition-colors text-left ${selectedPartnerId === cid ? 'bg-green-50' : ''}`}
+                  key={pid}
+                  onClick={() => setSelectedPartnerId(pid)}
+                  className={`w-full p-4 border-b border-zinc-100 flex items-center gap-3 hover:bg-zinc-50 transition-colors text-left ${selectedPartnerId === pid ? 'bg-green-50' : ''}`}
                 >
                   <Avatar user={user} />
                   <div className="flex-1 overflow-hidden">
@@ -155,7 +171,7 @@ export default function ChatPage() {
         {selectedPartnerId ? (
           <>
             {(() => {
-              const conv = conversationMap[selectedPartnerId];
+              const conv = mergedByPartner[selectedPartnerId];
               const partnerUser = conv ? users[conv.partnerId] : null;
               return (
                 <div className="p-4 border-b border-zinc-200 bg-white flex items-center gap-3 shadow-sm shrink-0">
@@ -169,7 +185,7 @@ export default function ChatPage() {
             })()}
 
             <div className="flex-1 p-6 overflow-y-auto space-y-3">
-              {(conversationMap[selectedPartnerId]?.msgs ?? []).map((msg: any) => {
+              {(mergedByPartner[selectedPartnerId]?.msgs ?? []).map((msg: any) => {
                 const isMine = msg.sender_id === myId;
                 return (
                   <div key={msg.id} className={`flex ${isMine ? 'justify-end' : 'justify-start'}`}>
