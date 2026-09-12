@@ -1,3 +1,4 @@
+import { TwitterApi } from 'twitter-api-v2';
 import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import { getAppClient } from '@/lib/xClient';
@@ -24,12 +25,13 @@ export async function GET(request: Request) {
     }
 
     // Exchange for permanent access token
-    const appClient = getAppClient();
-    const { client: userClient, accessToken, accessSecret } = await appClient.login({
-      oauth_token,
-      oauth_token_secret: storedSecret,
-      oauth_verifier,
+    const tempClient = new TwitterApi({
+      appKey: process.env.X_API_KEY!,
+      appSecret: process.env.X_API_SECRET!,
+      accessToken: oauth_token,
+      accessSecret: storedSecret,
     });
+    const { client: userClient, accessToken, accessSecret } = await tempClient.login(oauth_verifier);
 
     // Fetch the user profile
     const me = await userClient.v2.me({
