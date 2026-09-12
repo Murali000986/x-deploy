@@ -25,37 +25,17 @@ export async function GET() {
     const userMap: Record<string, any> = {};
     const seenMsgIds = new Set<string>();
 
-    // ATTEMPT 1: v1.1 API (Most reliable for fetching BOTH sent and received in one go)
+    // ATTEMPT 1: v1.1 API (returns BOTH sent AND received)
+    let v1Success = false;
     try {
       const v1Result = await client.v1.get('direct_messages/events/list.json', { count: 50 });
       const events: any[] = v1Result?.events ?? [];
-      
-      const userIdsToLookup = new Set<string>();
-      events.forEach((ev: any) => {
-        const mc = ev.message_create;
-        if (mc?.sender_id) userIdsToLookup.add(mc.sender_id);
-        if (mc?.target?.recipient_id) userIdsToLookup.add(mc.target.recipient_id);
-      });
-      userIdsToLookup.delete(myId);
-
-      if (userIdsToLookup.size > 0) {
-        try {
-          const usersRes = await client.v2.users([...userIdsToLookup], {
-            'user.fields': ['username', 'name', 'profile_image_url'] as any,
-          });
-          (usersRes.data ?? []).forEach((u: any) => { userMap[u.id] = u; });
-        } catch (e) {
-          console.warn("User lookup for v1.1 failed:", e);
-        }
-      }
 
       events.forEach((ev: any) => {
         const mc = ev.message_create;
         const senderId = mc?.sender_id;
         const recipientId = mc?.target?.recipient_id;
         if (!senderId || !recipientId) return;
-
-        // convId = sorted pair so both directions share same key
         const convId = [senderId, recipientId].sort().join('-');
         const msgId = ev.id;
         if (!seenMsgIds.has(msgId)) {
@@ -70,56 +50,79 @@ export async function GET() {
           seenMsgIds.add(msgId);
         }
       });
-      console.log(`v1.1 fetch success. Loaded ${allMessages.length} messages.`);
+      v1Success = true;
+      console.log(`v1.1 success: ${allMessages.length} messages`);
     } catch (v1Error: any) {
-      console.warn("v1.1 API failed, falling back to v2:", v1Error?.data ?? v1Error?.message);
+      console.warn('v1.1 failed, using v2:', v1Error?.data?.title ?? v1Error?.message);
+    }
 
-      // ATTEMPT 2: v2 API
-      const eventsRaw = await (client.v2 as any).get('dm_events', {
-        'dm_event.fields': 'text,sender_id,created_at,dm_conversation_id',
-        'expansions': 'sender_id',
-        'user.fields': 'username,name,profile_image_url',
-        'max_results': '50',
-      });
+    // ATTEMPT 2: v2 fallback (only sent messages, but better than nothing)
+    if (!v1Success) {
+      try {
+        const eventsRaw = await (client.v2 as any).get('dm_events', {
+          'dm_event.fields': 'text,sender_id,created_at,dm_conversation_id',
+          'expansions': 'sender_id',
+          'user.fields': 'username,name,profile_image_url',
+          'max_results': '50',
+        });
+        const events: any[] = eventsRaw?.data ?? [];
+        (eventsRaw?.includes?.users ?? []).forEach((u: any) => { userMap[u.id] = u; });
 
-      const events: any[] = eventsRaw?.data ?? [];
-      (eventsRaw?.includes?.users ?? []).forEach((u: any) => { userMap[u.id] = u; });
-
-      const convIds = [...new Set(events.map((e: any) => e.dm_conversation_id).filter(Boolean))];
-
-      for (const convId of convIds) {
-        try {
-          // Attempt to fetch thread to get BOTH sent and received
-          const threadRaw = await (client.v2 as any).get(`dm_conversations/${convId}/dm_events`, {
-            'dm_event.fields': 'text,sender_id,created_at,dm_conversation_id',
-            'expansions': 'sender_id',
-            'user.fields': 'username,name,profile_image_url',
-            'max_results': '50',
-          });
-
-          (threadRaw?.data ?? []).forEach((msg: any) => {
-            if (!seenMsgIds.has(msg.id)) {
-              allMessages.push({ ...msg, dm_conversation_id: convId });
-              seenMsgIds.add(msg.id);
-            }
-          });
-          (threadRaw?.includes?.users ?? []).forEach((u: any) => { userMap[u.id] = u; });
-        } catch (threadError: any) {
-          console.warn(`Thread fetch failed for ${convId}:`, threadError?.message);
-          // Only fallback to sent messages if thread fetch fails
-          events
-            .filter((e: any) => e.dm_conversation_id === convId)
-            .forEach((msg: any) => {
-               if (!seenMsgIds.has(msg.id)) {
-                 allMessages.push(msg);
-                 seenMsgIds.add(msg.id);
-               }
-            });
+        for (const msg of events) {
+          if (!seenMsgIds.has(msg.id)) {
+            allMessages.push(msg);
+            seenMsgIds.add(msg.id);
+          }
         }
+
+        // Try to get full threads (both sides) per conversation
+        const convIds = [...new Set(events.map((e: any) => e.dm_conversation_id).filter(Boolean))];
+        for (const convId of convIds) {
+          try {
+            const threadRaw = await (client.v2 as any).get(`dm_conversations/${convId}/dm_events`, {
+              'dm_event.fields': 'text,sender_id,created_at,dm_conversation_id',
+              'expansions': 'sender_id',
+              'user.fields': 'username,name,profile_image_url',
+              'max_results': '50',
+            });
+            (threadRaw?.data ?? []).forEach((msg: any) => {
+              if (!seenMsgIds.has(msg.id)) {
+                allMessages.push({ ...msg, dm_conversation_id: convId });
+                seenMsgIds.add(msg.id);
+              }
+            });
+            (threadRaw?.includes?.users ?? []).forEach((u: any) => { userMap[u.id] = u; });
+          } catch (_) {}
+        }
+      } catch (v2Error: any) {
+        console.error('v2 also failed:', v2Error?.message);
       }
     }
 
-    // Always ensure my details are in the map so UI can render my avatar
+    // Collect all unique partner IDs from messages (from convId "A-B", pick the one != myId)
+    const partnerIds = new Set<string>();
+    allMessages.forEach(msg => {
+      // From convId
+      const parts = (msg.dm_conversation_id ?? '').split('-');
+      parts.forEach((p: string) => { if (p && p !== myId) partnerIds.add(p); });
+      // From explicit fields
+      if (msg.sender_id && msg.sender_id !== myId) partnerIds.add(msg.sender_id);
+      if (msg.recipient_id && msg.recipient_id !== myId) partnerIds.add(msg.recipient_id);
+    });
+
+    // Bulk-fetch user profiles for all partners we found
+    if (partnerIds.size > 0) {
+      try {
+        const usersRes = await client.v2.users([...partnerIds], {
+          'user.fields': ['username', 'name', 'profile_image_url'] as any,
+        });
+        (usersRes.data ?? []).forEach((u: any) => { userMap[u.id] = u; });
+      } catch (e: any) {
+        console.warn('Partner user lookup failed:', e?.message);
+      }
+    }
+
+    // Always include bot's own profile
     userMap[myId] = {
       id: myId,
       name: me.data.name,
@@ -143,7 +146,7 @@ export async function GET() {
         _warning: '⚠️ DM permissions missing. Set "Read and write and Direct message" in X Dev Portal and regenerate tokens.'
       });
     }
-    const msg = error?.data?.detail ?? error?.message ?? "Failed to fetch DM inbox";
+    const msg = error?.data?.detail ?? error?.message ?? 'Failed to fetch DM inbox';
     return NextResponse.json({ _error: msg, data: [], includes: { users: [] } });
   }
 }
