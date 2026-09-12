@@ -63,8 +63,12 @@ export default function ChatPage() {
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!replyText.trim() || !selectedPartnerId) return;
-    const partnerUser = users[selectedPartnerId];
-    if (!partnerUser?.username) return;
+    const conv = conversationMap[selectedPartnerId];
+    const partnerUser = conv ? users[conv.partnerId] : null;
+    if (!partnerUser?.username) {
+      setSendError('Cannot find partner username to send DM.');
+      return;
+    }
     setSending(true);
     setSendError('');
     try {

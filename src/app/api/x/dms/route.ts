@@ -22,53 +22,50 @@ export async function GET() {
     const me = await client.v2.me();
     const myId = me.data.id;
 
-    // Fetch DM events using direct client request (more reliable than wrapper)
-    const eventsRaw = await (client.v2 as any).get('dm_events', {
-      'dm_event.fields': 'text,sender_id,created_at,dm_conversation_id',
-      'expansions': 'sender_id',
-      'user.fields': 'username,name,profile_image_url',
-      'max_results': '50',
+    // v1.1 returns BOTH sent and received DMs in one call
+    const v1Result = await client.v1.get('direct_messages/events/list.json', { count: 50 });
+    const events: any[] = v1Result?.events ?? [];
+
+    // Collect unique user IDs to look up
+    const userIds = new Set<string>();
+    events.forEach((ev: any) => {
+      const mc = ev.message_create;
+      if (mc?.sender_id) userIds.add(mc.sender_id);
+      if (mc?.target?.recipient_id) userIds.add(mc.target.recipient_id);
     });
+    userIds.delete(myId); // we know ourselves
 
-    const events: any[] = eventsRaw?.data ?? [];
+    // Lookup user info for all participants
     const userMap: Record<string, any> = {};
-    (eventsRaw?.includes?.users ?? []).forEach((u: any) => { userMap[u.id] = u; });
-
-    // Get unique conversation IDs from events
-    const convIds = [...new Set(events.map((e: any) => e.dm_conversation_id).filter(Boolean))];
-
-    if (convIds.length === 0) {
-      // No conversations found from sent messages — return what we have
-      return NextResponse.json({ data: events, includes: { users: Object.values(userMap) }, _myId: myId });
-    }
-
-    // Fetch full threads (both sides) per conversation
-    const allMessages: any[] = [];
-
-    for (const convId of convIds) {
+    if (userIds.size > 0) {
       try {
-        const threadRaw = await (client.v2 as any).get(`dm_conversations/${convId}/dm_events`, {
-          'dm_event.fields': 'text,sender_id,created_at,dm_conversation_id',
-          'expansions': 'sender_id',
-          'user.fields': 'username,name,profile_image_url',
-          'max_results': '50',
+        const usersRes = await client.v2.users([...userIds], {
+          'user.fields': ['username', 'name', 'profile_image_url'] as any,
         });
-
-        (threadRaw?.data ?? []).forEach((msg: any) => {
-          allMessages.push({ ...msg, dm_conversation_id: convId });
-        });
-        (threadRaw?.includes?.users ?? []).forEach((u: any) => { userMap[u.id] = u; });
-      } catch (e: any) {
-        console.warn(`Thread fetch failed for ${convId}:`, e?.message);
-        // Fallback: include the original sent message at least
-        events
-          .filter((e: any) => e.dm_conversation_id === convId)
-          .forEach((msg: any) => allMessages.push(msg));
+        (usersRes.data ?? []).forEach((u: any) => { userMap[u.id] = u; });
+      } catch (e) {
+        console.warn('User lookup failed:', e);
       }
     }
 
+    // Transform v1.1 events to our internal format
+    const messages = events.map((ev: any) => {
+      const mc = ev.message_create;
+      const senderId = mc?.sender_id;
+      const recipientId = mc?.target?.recipient_id;
+      // Conversation ID = sorted pair of user IDs (consistent regardless of direction)
+      const convId = [senderId, recipientId].sort().join('-');
+      return {
+        id: ev.id,
+        sender_id: senderId,
+        text: mc?.message_data?.text ?? '',
+        created_at: new Date(Number(ev.created_timestamp)).toISOString(),
+        dm_conversation_id: convId,
+      };
+    });
+
     return NextResponse.json({
-      data: allMessages,
+      data: messages,
       includes: { users: Object.values(userMap) },
       _myId: myId,
     });
