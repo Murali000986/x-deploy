@@ -1,0 +1,10 @@
+{
+  "code": 403,
+  "message": "Request failed with code 403",
+  "data": {
+    "detail": "Your client app is not configured with the appropriate oauth1 app permissions for this endpoint.",
+    "status": 403,
+    "title": "Forbidden",
+    "type": "https://api.x.com/2/problems/oauth1-permissions"
+  }
+}
