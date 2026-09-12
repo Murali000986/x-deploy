@@ -18,64 +18,113 @@ export async function GET() {
       accessSecret: X_ACCESS_SECRET,
     });
 
-    // Get bot's own ID
     const me = await client.v2.me();
     const myId = me.data.id;
 
-    // Fetch DM events using direct client request
-    const eventsRaw = await (client.v2 as any).get('dm_events', {
-      'dm_event.fields': 'text,sender_id,created_at,dm_conversation_id',
-      'expansions': 'sender_id',
-      'user.fields': 'username,name,profile_image_url',
-      'max_results': '50',
-    });
-
-    const events: any[] = eventsRaw?.data ?? [];
-    const userMap: Record<string, any> = {};
-    (eventsRaw?.includes?.users ?? []).forEach((u: any) => { userMap[u.id] = u; });
-
-    // Get unique conversation IDs from events
-    const convIds = [...new Set(events.map((e: any) => e.dm_conversation_id).filter(Boolean))];
-
-    if (convIds.length === 0) {
-      return NextResponse.json({ data: events, includes: { users: Object.values(userMap) }, _myId: myId });
-    }
-
-    // Fetch full threads (both sides) per conversation
     const allMessages: any[] = [];
+    const userMap: Record<string, any> = {};
     const seenMsgIds = new Set<string>();
 
-    for (const convId of convIds) {
-      try {
-        const threadRaw = await (client.v2 as any).get(`dm_conversations/${convId}/dm_events`, {
-          'dm_event.fields': 'text,sender_id,created_at,dm_conversation_id',
-          'expansions': 'sender_id',
-          'user.fields': 'username,name,profile_image_url',
-          'max_results': '50',
-        });
+    // ATTEMPT 1: v1.1 API (Most reliable for fetching BOTH sent and received in one go)
+    try {
+      const v1Result = await client.v1.get('direct_messages/events/list.json', { count: 50 });
+      const events: any[] = v1Result?.events ?? [];
+      
+      const userIdsToLookup = new Set<string>();
+      events.forEach((ev: any) => {
+        const mc = ev.message_create;
+        if (mc?.sender_id) userIdsToLookup.add(mc.sender_id);
+        if (mc?.target?.recipient_id) userIdsToLookup.add(mc.target.recipient_id);
+      });
+      userIdsToLookup.delete(myId);
 
-        (threadRaw?.data ?? []).forEach((msg: any) => {
-          if (!seenMsgIds.has(msg.id)) {
-            allMessages.push({ ...msg, dm_conversation_id: convId });
-            seenMsgIds.add(msg.id);
-          }
-        });
-        (threadRaw?.includes?.users ?? []).forEach((u: any) => { userMap[u.id] = u; });
-      } catch (e: any) {
-        console.warn(`Thread fetch failed for ${convId}:`, e?.message);
-        // Fallback: include the original sent message at least
-        events
-          .filter((e: any) => e.dm_conversation_id === convId)
-          .forEach((msg: any) => {
-             if (!seenMsgIds.has(msg.id)) {
-               allMessages.push(msg);
-               seenMsgIds.add(msg.id);
-             }
+      if (userIdsToLookup.size > 0) {
+        try {
+          const usersRes = await client.v2.users([...userIdsToLookup], {
+            'user.fields': ['username', 'name', 'profile_image_url'] as any,
           });
+          (usersRes.data ?? []).forEach((u: any) => { userMap[u.id] = u; });
+        } catch (e) {
+          console.warn("User lookup for v1.1 failed:", e);
+        }
+      }
+
+      events.forEach((ev: any) => {
+        const mc = ev.message_create;
+        const senderId = mc?.sender_id;
+        const recipientId = mc?.target?.recipient_id;
+        if (!senderId || !recipientId) return;
+
+        const convId = [senderId, recipientId].sort().join('-');
+        const msgId = ev.id;
+        if (!seenMsgIds.has(msgId)) {
+          allMessages.push({
+            id: msgId,
+            text: mc?.message_data?.text ?? '',
+            sender_id: senderId,
+            created_at: new Date(Number(ev.created_timestamp)).toISOString(),
+            dm_conversation_id: convId,
+          });
+          seenMsgIds.add(msgId);
+        }
+      });
+      console.log(`v1.1 fetch success. Loaded ${allMessages.length} messages.`);
+    } catch (v1Error: any) {
+      console.warn("v1.1 API failed, falling back to v2:", v1Error?.data ?? v1Error?.message);
+
+      // ATTEMPT 2: v2 API
+      const eventsRaw = await (client.v2 as any).get('dm_events', {
+        'dm_event.fields': 'text,sender_id,created_at,dm_conversation_id',
+        'expansions': 'sender_id',
+        'user.fields': 'username,name,profile_image_url',
+        'max_results': '50',
+      });
+
+      const events: any[] = eventsRaw?.data ?? [];
+      (eventsRaw?.includes?.users ?? []).forEach((u: any) => { userMap[u.id] = u; });
+
+      const convIds = [...new Set(events.map((e: any) => e.dm_conversation_id).filter(Boolean))];
+
+      for (const convId of convIds) {
+        try {
+          // Attempt to fetch thread to get BOTH sent and received
+          const threadRaw = await (client.v2 as any).get(`dm_conversations/${convId}/dm_events`, {
+            'dm_event.fields': 'text,sender_id,created_at,dm_conversation_id',
+            'expansions': 'sender_id',
+            'user.fields': 'username,name,profile_image_url',
+            'max_results': '50',
+          });
+
+          (threadRaw?.data ?? []).forEach((msg: any) => {
+            if (!seenMsgIds.has(msg.id)) {
+              allMessages.push({ ...msg, dm_conversation_id: convId });
+              seenMsgIds.add(msg.id);
+            }
+          });
+          (threadRaw?.includes?.users ?? []).forEach((u: any) => { userMap[u.id] = u; });
+        } catch (threadError: any) {
+          console.warn(`Thread fetch failed for ${convId}:`, threadError?.message);
+          // Only fallback to sent messages if thread fetch fails
+          events
+            .filter((e: any) => e.dm_conversation_id === convId)
+            .forEach((msg: any) => {
+               if (!seenMsgIds.has(msg.id)) {
+                 allMessages.push(msg);
+                 seenMsgIds.add(msg.id);
+               }
+            });
+        }
       }
     }
 
-    // Sort by time ascending
+    // Always ensure my details are in the map so UI can render my avatar
+    userMap[myId] = {
+      id: myId,
+      name: me.data.name,
+      username: me.data.username,
+      profile_image_url: (me.data as any).profile_image_url,
+    };
+
     allMessages.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
 
     return NextResponse.json({
