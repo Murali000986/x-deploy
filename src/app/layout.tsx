@@ -3,6 +3,7 @@ import { Inter } from "next/font/google";
 import "./globals.css";
 import Link from 'next/link';
 import { Search, Hash, MessageCircle, Home, Users, Settings } from 'lucide-react';
+import BotIndicator from '@/components/BotIndicator';
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -51,17 +52,7 @@ export default function RootLayout({
                 <span className="font-medium">Settings</span>
               </Link>
             </nav>
-            <div className="p-4 border-t border-zinc-200">
-              <div className="flex items-center gap-3">
-                <div className="w-8 h-8 rounded-full bg-zinc-200 flex items-center justify-center">
-                  <span className="text-xs font-bold text-zinc-600">BOT</span>
-                </div>
-                <div className="text-sm">
-                  <p className="font-medium">Bot Account</p>
-                  <p className="text-zinc-500 text-xs">Active</p>
-                </div>
-              </div>
-            </div>
+            <BotIndicator />
           </aside>
           {/* Main Content */}
           <main className="flex-1 overflow-y-auto flex flex-col">
