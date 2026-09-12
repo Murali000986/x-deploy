@@ -18,20 +18,24 @@ function makeClient() {
 
 export async function POST(request: Request) {
   try {
-    const { username, text } = await request.json();
-    if (!username || !text) {
-      return NextResponse.json({ error: "Missing username or text" }, { status: 400 });
+    const { username, userId, text } = await request.json();
+    if (!text || (!username && !userId)) {
+      return NextResponse.json({ error: "Missing recipient details or text" }, { status: 400 });
     }
 
     const client = makeClient();
-    const cleanUsername = username.trim().replace(/^@/, '');
+    
+    let recipientId = userId;
 
-    // 1. Resolve numeric ID
-    const userResult = await client.v2.userByUsername(cleanUsername);
-    if (!userResult.data?.id) {
-      return NextResponse.json({ error: "User not found on X" }, { status: 404 });
+    if (!recipientId && username) {
+      // 1. Resolve numeric ID if only username was provided
+      const cleanUsername = username.trim().replace(/^@/, '');
+      const userResult = await client.v2.userByUsername(cleanUsername);
+      if (!userResult.data?.id) {
+        return NextResponse.json({ error: "User not found on X" }, { status: 404 });
+      }
+      recipientId = userResult.data.id;
     }
-    const recipientId = userResult.data.id;
 
     // 2. Try v1.1 first (works on Basic tier and above, more widely supported)
     try {

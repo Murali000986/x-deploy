@@ -80,19 +80,14 @@ export default function ChatPage() {
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!replyText.trim() || !selectedPartnerId) return;
-    const conv = mergedByPartner[selectedPartnerId];
-    const partnerUser = conv ? users[conv.partnerId] : null;
-    if (!partnerUser?.username) {
-      setSendError('Cannot find partner username to send DM.');
-      return;
-    }
     setSending(true);
     setSendError('');
     try {
       const res = await fetch('/api/dm', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username: partnerUser.username, text: replyText })
+        // Send by userId directly — no username lookup needed
+        body: JSON.stringify({ userId: selectedPartnerId, text: replyText })
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to send message');
