@@ -37,19 +37,7 @@ export async function POST(request: Request) {
       recipientId = userResult.data.id;
     }
 
-    // 2. Try v1.1 first (works on Basic tier and above, more widely supported)
-    try {
-      await (client.v1 as any).sendDm({
-        recipient_id: recipientId,
-        text,
-      });
-      return NextResponse.json({ success: true });
-    } catch (v1err: any) {
-      // v1.1 failed — try v2
-      console.warn("v1.1 DM failed, trying v2:", v1err?.data ?? v1err?.message);
-    }
-
-    // 3. Fallback to v2
+    // 2. Use v2 exclusively for sending (v1.1 silently drops messages on some tiere)
     await client.v2.sendDmToParticipant(recipientId, { text });
     return NextResponse.json({ success: true });
 
