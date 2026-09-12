@@ -27,6 +27,7 @@ export default function ChatPage() {
       const res = await fetch('/api/x/dms');
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to fetch DMs');
+      if (data._error) { setError(data._error); setLoading(false); return; }
       setMessages(data.data || []);
       setMyId(data._myId || '');
       if (data._warning) setDmWarning(data._warning);

@@ -1,7 +1,22 @@
 import { NextResponse } from 'next/server';
 import { TwitterApi } from 'twitter-api-v2';
+import { generateOAuth1Header } from '@/lib/twitter';
 
 export const dynamic = 'force-dynamic';
+
+// Signed fetch helper using OAuth 1.0a
+async function oauthFetch(url: string): Promise<any> {
+  const auth = generateOAuth1Header('GET', url);
+  const res = await fetch(url, { headers: { Authorization: auth } });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    const err: any = new Error(`HTTP ${res.status}`);
+    err.code = res.status;
+    err.data = body;
+    throw err;
+  }
+  return res.json();
+}
 
 export async function GET() {
   try {
@@ -22,63 +37,58 @@ export async function GET() {
     const me = await client.v2.me();
     const myId = me.data.id;
 
-    // v1.1 returns BOTH sent and received DMs in one call
-    const v1Result = await client.v1.get('direct_messages/events/list.json', { count: 50 });
-    const events: any[] = v1Result?.events ?? [];
-
-    // Collect unique user IDs to look up
-    const userIds = new Set<string>();
-    events.forEach((ev: any) => {
-      const mc = ev.message_create;
-      if (mc?.sender_id) userIds.add(mc.sender_id);
-      if (mc?.target?.recipient_id) userIds.add(mc.target.recipient_id);
-    });
-    userIds.delete(myId); // we know ourselves
-
-    // Lookup user info for all participants
+    // Step 1: Fetch DM events (sent by authenticates user) to get conversation IDs
+    const step1Url = 'https://api.twitter.com/2/dm_events?event_types=MessageCreate&dm_event.fields=text,sender_id,created_at,dm_conversation_id&expansions=sender_id&user.fields=username,name,profile_image_url&max_results=50';
+    const step1 = await oauthFetch(step1Url);
+    const sentEvents: any[] = step1?.data ?? [];
     const userMap: Record<string, any> = {};
-    if (userIds.size > 0) {
+    (step1?.includes?.users ?? []).forEach((u: any) => { userMap[u.id] = u; });
+
+    const convIds = [...new Set(sentEvents.map((e: any) => e.dm_conversation_id).filter(Boolean))];
+
+    if (convIds.length === 0) {
+      // No sent messages — return empty
+      return NextResponse.json({ data: [], includes: { users: [] }, _myId: myId });
+    }
+
+    // Step 2: For each conversation, fetch FULL thread (both sent + received)
+    const allMessages: any[] = [];
+
+    for (const convId of convIds) {
       try {
-        const usersRes = await client.v2.users([...userIds], {
-          'user.fields': ['username', 'name', 'profile_image_url'] as any,
+        const threadUrl = `https://api.twitter.com/2/dm_conversations/${convId}/dm_events?event_types=MessageCreate&dm_event.fields=text,sender_id,created_at,dm_conversation_id&expansions=sender_id&user.fields=username,name,profile_image_url&max_results=50`;
+        const thread = await oauthFetch(threadUrl);
+        (thread?.data ?? []).forEach((msg: any) => {
+          allMessages.push({ ...msg, dm_conversation_id: convId });
         });
-        (usersRes.data ?? []).forEach((u: any) => { userMap[u.id] = u; });
-      } catch (e) {
-        console.warn('User lookup failed:', e);
+        (thread?.includes?.users ?? []).forEach((u: any) => { userMap[u.id] = u; });
+      } catch (e: any) {
+        console.warn(`Thread ${convId} failed:`, e?.data ?? e?.message);
+        // Fallback: at least include the sent messages for this conv
+        sentEvents
+          .filter((e: any) => e.dm_conversation_id === convId)
+          .forEach((msg: any) => allMessages.push(msg));
       }
     }
 
-    // Transform v1.1 events to our internal format
-    const messages = events.map((ev: any) => {
-      const mc = ev.message_create;
-      const senderId = mc?.sender_id;
-      const recipientId = mc?.target?.recipient_id;
-      // Conversation ID = sorted pair of user IDs (consistent regardless of direction)
-      const convId = [senderId, recipientId].sort().join('-');
-      return {
-        id: ev.id,
-        sender_id: senderId,
-        text: mc?.message_data?.text ?? '',
-        created_at: new Date(Number(ev.created_timestamp)).toISOString(),
-        dm_conversation_id: convId,
-      };
-    });
+    // Sort by time ascending so oldest message is first
+    allMessages.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
 
     return NextResponse.json({
-      data: messages,
+      data: allMessages,
       includes: { users: Object.values(userMap) },
       _myId: myId,
     });
 
   } catch (error: any) {
-    console.error('DM fetch error:', error?.data ?? error?.message);
-    const isAuth = error.code === 401 || error.code === 403;
-    if (isAuth) {
-      return NextResponse.json({
-        data: [], includes: { users: [] },
-        _warning: '⚠️ DM permissions missing. Set "Read and write and Direct message" in X Dev Portal and regenerate tokens.'
-      });
-    }
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    const code = error?.code ?? 500;
+    const msg = error?.data?.detail ?? error?.data?.title ?? error?.message ?? 'Unknown error';
+    console.error('DM GET error:', code, msg, error?.data);
+
+    return NextResponse.json({
+      data: [],
+      includes: { users: [] },
+      _error: `X API error ${code}: ${msg}`,
+    });
   }
 }
