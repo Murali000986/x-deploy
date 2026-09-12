@@ -31,8 +31,8 @@ export async function GET(request: Request) {
 
     const dmEvents = await client.v2.listDmEvents({
       event_types: 'MessageCreate',
-      'dm_event.fields': ['text', 'sender_id', 'created_at', 'participant_ids'] as any,
-      expansions: ['sender_id', 'participant_ids'] as any,
+      'dm_event.fields': ['text', 'sender_id', 'created_at', 'dm_conversation_id'] as any,
+      expansions: ['sender_id'] as any,
       'user.fields': ['username', 'name', 'profile_image_url'] as any,
     });
 

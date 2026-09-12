@@ -42,20 +42,23 @@ export default function ChatPage() {
     }
   };
 
-  // Group messages by conversation partner (the person who is NOT us)
-  const getPartnerId = (msg: any): string => {
-    if (msg.sender_id !== myId) return msg.sender_id;
-    const participants: string[] = msg.participant_ids ?? [];
-    return participants.find((id: string) => id !== myId) ?? msg.sender_id;
-  };
-
-  const conversationMap: Record<string, any[]> = {};
+  // Group messages by dm_conversation_id
+  const convById: Record<string, any[]> = {};
   messages.forEach(msg => {
-    const partnerId = getPartnerId(msg);
-    if (!conversationMap[partnerId]) conversationMap[partnerId] = [];
-    conversationMap[partnerId].push(msg);
+    const cid = msg.dm_conversation_id ?? msg.sender_id;
+    if (!convById[cid]) convById[cid] = [];
+    convById[cid].push(msg);
   });
-  const partners = Object.keys(conversationMap);
+
+  // For each conversation, find the partner (any sender who isn't me)
+  const conversationMap: Record<string, { msgs: any[], partnerId: string }> = {};
+  Object.entries(convById).forEach(([cid, msgs]) => {
+    const partnerId = msgs.find(m => m.sender_id !== myId)?.sender_id
+      ?? msgs[0]?.sender_id;
+    if (!partnerId) return;
+    conversationMap[cid] = { msgs, partnerId };
+  });
+  const convIds = Object.keys(conversationMap);
 
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -115,18 +118,18 @@ export default function ChatPage() {
         <div className="flex-1 overflow-y-auto">
           {error ? (
             <div className="p-4 text-center text-red-500 text-sm mt-10">{error}</div>
-          ) : partners.length === 0 ? (
+          ) : convIds.length === 0 ? (
             <div className="p-4 text-center text-zinc-500 text-sm mt-10">No conversations found.</div>
           ) : (
-            partners.map(partnerId => {
+            convIds.map(cid => {
+              const { msgs, partnerId } = conversationMap[cid];
               const user = users[partnerId] || { name: 'Unknown', username: partnerId };
-              const msgs = conversationMap[partnerId];
               const lastMsg = msgs[msgs.length - 1];
               return (
                 <button
-                  key={partnerId}
-                  onClick={() => setSelectedPartnerId(partnerId)}
-                  className={`w-full p-4 border-b border-zinc-100 flex items-center gap-3 hover:bg-zinc-50 transition-colors text-left ${selectedPartnerId === partnerId ? 'bg-green-50' : ''}`}
+                  key={cid}
+                  onClick={() => setSelectedPartnerId(cid)}
+                  className={`w-full p-4 border-b border-zinc-100 flex items-center gap-3 hover:bg-zinc-50 transition-colors text-left ${selectedPartnerId === cid ? 'bg-green-50' : ''}`}
                 >
                   <Avatar user={user} />
                   <div className="flex-1 overflow-hidden">
@@ -146,16 +149,22 @@ export default function ChatPage() {
       <div className="flex-1 bg-zinc-50 flex flex-col overflow-hidden">
         {selectedPartnerId ? (
           <>
-            <div className="p-4 border-b border-zinc-200 bg-white flex items-center gap-3 shadow-sm shrink-0">
-              <Avatar user={users[selectedPartnerId]} />
-              <div>
-                <h3 className="font-bold">{users[selectedPartnerId]?.name || 'Unknown'}</h3>
-                <p className="text-sm text-zinc-500">@{users[selectedPartnerId]?.username || selectedPartnerId}</p>
-              </div>
-            </div>
+            {(() => {
+              const conv = conversationMap[selectedPartnerId];
+              const partnerUser = conv ? users[conv.partnerId] : null;
+              return (
+                <div className="p-4 border-b border-zinc-200 bg-white flex items-center gap-3 shadow-sm shrink-0">
+                  <Avatar user={partnerUser} />
+                  <div>
+                    <h3 className="font-bold">{partnerUser?.name || 'Unknown'}</h3>
+                    <p className="text-sm text-zinc-500">@{partnerUser?.username || selectedPartnerId}</p>
+                  </div>
+                </div>
+              );
+            })()}
 
             <div className="flex-1 p-6 overflow-y-auto space-y-3">
-              {(conversationMap[selectedPartnerId] ?? []).map((msg: any) => {
+              {(conversationMap[selectedPartnerId]?.msgs ?? []).map((msg: any) => {
                 const isMine = msg.sender_id === myId;
                 return (
                   <div key={msg.id} className={`flex ${isMine ? 'justify-end' : 'justify-start'}`}>
