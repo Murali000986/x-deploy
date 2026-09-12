@@ -55,6 +55,7 @@ export async function GET() {
         const recipientId = mc?.target?.recipient_id;
         if (!senderId || !recipientId) return;
 
+        // convId = sorted pair so both directions share same key
         const convId = [senderId, recipientId].sort().join('-');
         const msgId = ev.id;
         if (!seenMsgIds.has(msgId)) {
@@ -62,6 +63,7 @@ export async function GET() {
             id: msgId,
             text: mc?.message_data?.text ?? '',
             sender_id: senderId,
+            recipient_id: recipientId,
             created_at: new Date(Number(ev.created_timestamp)).toISOString(),
             dm_conversation_id: convId,
           });

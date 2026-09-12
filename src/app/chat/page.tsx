@@ -43,39 +43,31 @@ export default function ChatPage() {
     }
   };
 
-  // Group messages by conversation partner (the person who is NOT us)
-  const conversationMap: Record<string, { msgs: any[], partnerId: string }> = {};
+  // Extract the real partner from a message.
+  // dm_conversation_id = "ID1-ID2" (sorted). Partner = whichever part != myId.
+  const getPartnerId = (msg: any): string => {
+    if (msg.sender_id && msg.sender_id !== myId) return msg.sender_id;
+    const parts = (msg.dm_conversation_id ?? '').split('-');
+    const other = parts.find((p: string) => p !== myId && p !== '');
+    if (other) return other;
+    if (msg.recipient_id && msg.recipient_id !== myId) return msg.recipient_id;
+    return '';
+  };
 
-  messages.forEach(msg => {
-    // 1. Find who the other participant is. If we sent it, it's NOT us. If they sent it, it's their id.
-    // However, participant_ids doesn't exist, so we depend on the sender_id.
-    // If msg is sent by us (myId), we can't tell the recipient from the message alone UNLESS we look at other messages in the same dm_conversation_id.
-    const cid = msg.dm_conversation_id ?? msg.sender_id;
-    // We group by simple cid temporarily:
-    if (!conversationMap[cid]) conversationMap[cid] = { msgs: [], partnerId: '' };
-    conversationMap[cid].msgs.push(msg);
-  });
-
-  // 2. Discover partnerId for each conversation & swap map to be keyed by partnerId so we merge threads!
   const mergedByPartner: Record<string, { msgs: any[], partnerId: string }> = {};
-
-  Object.values(conversationMap).forEach(conv => {
-    // Partner is the first sender_id that isn't us
-    const partnerId = conv.msgs.find(m => m.sender_id !== myId)?.sender_id ?? conv.msgs[0]?.sender_id;
+  messages.forEach(msg => {
+    const partnerId = getPartnerId(msg);
     if (!partnerId) return;
-
-    if (!mergedByPartner[partnerId]) {
-      mergedByPartner[partnerId] = { msgs: [], partnerId };
-    }
-    mergedByPartner[partnerId].msgs.push(...conv.msgs);
+    if (!mergedByPartner[partnerId]) mergedByPartner[partnerId] = { msgs: [], partnerId };
+    mergedByPartner[partnerId].msgs.push(msg);
   });
 
-  // Sort messages within each merged conversation
   Object.values(mergedByPartner).forEach(conv => {
     conv.msgs.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
   });
 
   const partnerIds = Object.keys(mergedByPartner);
+
 
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
