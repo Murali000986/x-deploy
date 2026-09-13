@@ -41,6 +41,33 @@ export default function SettingsPage() {
   const [accounts, setAccounts] = useState<any[]>([]);
   const [acctLoading, setAcctLoading] = useState(true);
   const [acctMsg, setAcctMsg] = useState('');
+  
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [isAdding, setIsAdding] = useState(false);
+
+  const handleAddSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    setIsAdding(true);
+    setAcctMsg('');
+    const fd = new FormData(e.currentTarget);
+    const body = {
+      appKey: fd.get('appKey'), appSecret: fd.get('appSecret'),
+      accessToken: fd.get('accessToken'), accessSecret: fd.get('accessSecret')
+    };
+
+    try {
+      const res = await fetch('/api/accounts/add', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body) });
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+      setAcctMsg(`✅ Added account: ${data.account.name}`);
+      setShowAddModal(false);
+      fetchAccounts();
+    } catch (err: any) {
+      setAcctMsg(`❌ ${err.message}`);
+    } finally {
+      setIsAdding(false);
+    }
+  };
 
   // Read success/error from URL params on mount
   useEffect(() => {
@@ -193,12 +220,12 @@ export default function SettingsPage() {
             <Users className="w-4 h-4" />
             Connected X Accounts
           </div>
-          <a
-            href="/api/auth/x/login"
+          <button
+            onClick={() => setShowAddModal(true)}
             className="flex items-center gap-1.5 px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium rounded-xl transition-colors cursor-pointer"
           >
-            <Plus className="w-3.5 h-3.5" /> Add Account
-          </a>
+            <Plus className="w-3.5 h-3.5" /> Add Account Key
+          </button>
         </div>
 
         {acctMsg && (
@@ -211,9 +238,9 @@ export default function SettingsPage() {
           <div className="flex justify-center py-4"><Loader2 className="w-5 h-5 animate-spin text-zinc-400" /></div>
         ) : accounts.length === 0 ? (
           <div className="text-center py-6 text-zinc-400 text-sm">
-            <LogIn className="w-8 h-8 mx-auto mb-2 opacity-40" />
-            <p>No accounts connected via OAuth.</p>
-            <p className="text-xs mt-1 text-zinc-400">The .env credentials are still active as fallback.</p>
+            <Key className="w-8 h-8 mx-auto mb-2 opacity-40" />
+            <p>No managed accounts found.</p>
+            <p className="text-xs mt-1 text-zinc-400">The .env fallback credentials are still active.</p>
           </div>
         ) : (
           <div className="space-y-2">
@@ -249,6 +276,30 @@ export default function SettingsPage() {
           </div>
         )}
       </div>
+
+      {/* Add Account Modal */}
+      {showAddModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl w-full max-w-md p-6 shadow-xl space-y-4">
+            <h3 className="font-bold text-lg">Add X Account via API Keys</h3>
+            <p className="text-xs text-zinc-500">Provide all 4 credentials from the X Developer Portal for the specific bot account you want to manage.</p>
+            
+            <form onSubmit={handleAddSubmit} className="space-y-3">
+              <input type="text" name="appKey" placeholder="App Key (API Key)" required className="w-full px-3 py-2 text-sm border rounded-xl" />
+              <input type="text" name="appSecret" placeholder="App Secret (API Secret)" required className="w-full px-3 py-2 text-sm border rounded-xl" />
+              <input type="text" name="accessToken" placeholder="Access Token" required className="w-full px-3 py-2 text-sm border rounded-xl" />
+              <input type="text" name="accessSecret" placeholder="Access Token Secret" required className="w-full px-3 py-2 text-sm border rounded-xl" />
+              
+              <div className="flex gap-2 pt-2">
+                <button type="button" onClick={() => setShowAddModal(false)} className="flex-1 px-4 py-2 bg-zinc-100 text-zinc-700 hover:bg-zinc-200 rounded-xl text-sm font-medium">Cancel</button>
+                <button type="submit" disabled={isAdding} className="flex-1 px-4 py-2 bg-blue-600 text-white hover:bg-blue-700 rounded-xl text-sm font-medium flex items-center justify-center">
+                  {isAdding ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Verify & Add'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* Credits & Billing Links */}
       <div className="bg-zinc-50 border border-zinc-200 rounded-2xl p-5 space-y-4">

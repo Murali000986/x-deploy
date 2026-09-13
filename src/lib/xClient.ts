@@ -22,8 +22,8 @@ export async function getActiveClient(): Promise<TwitterApi> {
     const account = await XAccount.findOne({ isActive: true }).lean();
     if (account) {
       return new TwitterApi({
-        appKey: process.env.X_API_KEY!,
-        appSecret: process.env.X_API_SECRET!,
+        appKey: account.appKey,
+        appSecret: account.appSecret,
         accessToken: account.accessToken,
         accessSecret: account.accessSecret,
       });
