@@ -14,14 +14,14 @@ export async function GET(request: Request) {
   const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || '';
 
   if (!oauth_verifier) {
-    return NextResponse.redirect(`${baseUrl}/settings?error=OAuth+denied`);
+    return NextResponse.redirect(new URL(`${baseUrl}/settings?error=OAuth+denied`, request.url));
   }
 
   try {
     const cookieStore = await cookies();
     const storedSecret = cookieStore.get('oauth_token_secret')?.value ?? '';
     if (!storedSecret) {
-      return NextResponse.redirect(`${baseUrl}/settings?error=Session+expired`);
+      return NextResponse.redirect(new URL(`${baseUrl}/settings?error=Session+expired`, request.url));
     }
 
     // Exchange for permanent access token
@@ -53,9 +53,10 @@ export async function GET(request: Request) {
     cookieStore.delete('oauth_token_secret');
     cookieStore.delete('oauth_token');
 
-    return NextResponse.redirect(`${baseUrl}/settings?success=Account+added`);
+    return NextResponse.redirect(new URL(`${baseUrl}/settings?success=Account+added`, request.url));
   } catch (err: any) {
     console.error('OAuth callback error:', err?.message);
-    return NextResponse.redirect(`${baseUrl}/settings?error=${encodeURIComponent(err?.message ?? 'OAuth error')}`);
+    const errUrl = new URL(`${baseUrl}/settings?error=${encodeURIComponent(err?.message ?? 'OAuth error')}`, request.url);
+    return NextResponse.redirect(errUrl);
   }
 }
