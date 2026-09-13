@@ -86,6 +86,7 @@ export default function SettingsPage() {
   const botUsername = status?.access_token?.botUsername;
   const botName = status?.access_token?.botName;
 
+  // Trigger railway rebuild hook
 
   return (
     <div className="p-8 max-w-3xl mx-auto space-y-6 animate-in fade-in duration-500">
