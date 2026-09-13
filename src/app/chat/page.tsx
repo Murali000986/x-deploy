@@ -1,12 +1,13 @@
 "use client";
 import { useState, useEffect, useRef } from 'react';
-import { MessageCircle, Loader2, Send } from 'lucide-react';
+import { MessageCircle, Loader2, Send, Bot } from 'lucide-react';
 
 export default function ChatPage() {
+  const ObjectValues = Object.values;
   const [loading, setLoading] = useState(true);
   const [messages, setMessages] = useState<any[]>([]);
   const [users, setUsers] = useState<Record<string, any>>({});
-  const [myId, setMyId] = useState<string>('');
+  const [myIds, setMyIds] = useState<string[]>([]);
   const [error, setError] = useState('');
   const [sendError, setSendError] = useState('');
   const [dmWarning, setDmWarning] = useState('');
@@ -29,7 +30,7 @@ export default function ChatPage() {
       if (!res.ok) throw new Error(data.error || 'Failed to fetch DMs');
       if (data._error) { setError(data._error); setLoading(false); return; }
       setMessages(data.data || []);
-      setMyId(data._myId || '');
+      setMyIds(data._myIds || []);
       if (data._warning) setDmWarning(data._warning);
       const userMap: Record<string, any> = {};
       if (data.includes?.users) {
@@ -43,14 +44,13 @@ export default function ChatPage() {
     }
   };
 
-  // Extract the real partner from a message.
-  // dm_conversation_id = "ID1-ID2" (sorted). Partner = whichever part != myId.
+  // dm_conversation_id = "ID1-ID2" (sorted). Partner = whichever part is not in myIds.
   const getPartnerId = (msg: any): string => {
-    if (msg.sender_id && msg.sender_id !== myId) return msg.sender_id;
+    if (msg.sender_id && !myIds.includes(msg.sender_id)) return msg.sender_id;
     const parts = (msg.dm_conversation_id ?? '').split('-');
-    const other = parts.find((p: string) => p !== myId && p !== '');
+    const other = parts.find((p: string) => !myIds.includes(p) && p !== '');
     if (other) return other;
-    if (msg.recipient_id && msg.recipient_id !== myId) return msg.recipient_id;
+    if (msg.recipient_id && !myIds.includes(msg.recipient_id)) return msg.recipient_id;
     return '';
   };
 
@@ -62,24 +62,28 @@ export default function ChatPage() {
     mergedByPartner[partnerId].msgs.push(msg);
   });
 
-  Object.values(mergedByPartner).forEach(conv => {
+  ObjectValues(mergedByPartner).forEach(conv => {
     conv.msgs.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
   });
 
   const partnerIds = Object.keys(mergedByPartner);
-
 
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!replyText.trim() || !selectedPartnerId) return;
     setSending(true);
     setSendError('');
+    
+    // Find WHICH bot account received this conversation so we reply from the same bot!
+    const conv = mergedByPartner[selectedPartnerId];
+    const lastMsg = conv?.msgs[conv.msgs.length - 1];
+    const botAccountId = lastMsg?.botAccountId;
+
     try {
       const res = await fetch('/api/dm', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        // Send by userId directly — no username lookup needed
-        body: JSON.stringify({ userId: selectedPartnerId, text: replyText })
+        body: JSON.stringify({ userId: selectedPartnerId, text: replyText, botAccountId })
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to send message');
@@ -143,7 +147,7 @@ export default function ChatPage() {
                   <div className="flex-1 overflow-hidden">
                     <p className="font-semibold text-sm truncate">{user.name}</p>
                     <p className="text-xs text-zinc-400 truncate">
-                      {lastMsg?.sender_id === myId ? '↗ ' : ''}{lastMsg?.text ?? ''}
+                      {myIds.includes(lastMsg?.sender_id) ? '↗ ' : ''}{lastMsg?.text ?? ''}
                     </p>
                   </div>
                 </button>
@@ -173,10 +177,17 @@ export default function ChatPage() {
 
             <div className="flex-1 p-6 overflow-y-auto space-y-3">
               {(mergedByPartner[selectedPartnerId]?.msgs ?? []).map((msg: any) => {
-                const isMine = msg.sender_id === myId;
+                const isMine = myIds.includes(msg.sender_id) || msg.is_mine;
                 return (
-                  <div key={msg.id} className={`flex ${isMine ? 'justify-end' : 'justify-start'}`}>
-                    <div className={`p-3 rounded-2xl max-w-md shadow-sm text-sm ${isMine ? 'bg-blue-600 text-white rounded-br-sm' : 'bg-white border border-zinc-100 text-zinc-800 rounded-bl-sm'}`}>
+                  <div key={msg.id} className={`flex flex-col ${isMine ? 'items-end' : 'items-start'}`}>
+                    {/* Bot Identifier Badge */}
+                    <div className="flex items-center gap-1.5 mb-1 px-1 opacity-60">
+                      <Bot className="w-3" />
+                      <span className="text-[9px] font-semibold tracking-wide uppercase text-zinc-500">
+                         {msg.botUsername}
+                      </span>
+                    </div>
+                    <div className={`p-3 rounded-2xl max-w-md shadow-sm text-sm ${isMine ? 'bg-blue-600 text-white rounded-tr-sm' : 'bg-white border border-zinc-100 text-zinc-800 rounded-tl-sm'}`}>
                       <p>{msg.text}</p>
                       <p className={`text-[10px] mt-1 ${isMine ? 'text-blue-200' : 'text-zinc-400'}`}>
                         {new Date(msg.created_at).toLocaleTimeString()}

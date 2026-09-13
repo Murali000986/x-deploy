@@ -1,16 +1,30 @@
 import { NextResponse } from "next/server";
 import { getActiveClient } from "@/lib/xClient";
+import { TwitterApi } from "twitter-api-v2";
+import { XAccount } from "@/lib/models/XAccount";
+import { connectDB } from "@/lib/db";
 
 export const dynamic = 'force-dynamic';
 
 export async function POST(request: Request) {
   try {
-    const { username, userId, text } = await request.json();
+    const { username, userId, text, botAccountId } = await request.json();
     if (!text || (!username && !userId)) {
       return NextResponse.json({ error: "Missing recipient details or text" }, { status: 400 });
     }
 
-    const client = await getActiveClient();
+    let client: TwitterApi;
+    if (botAccountId) {
+      await connectDB();
+      const account = await XAccount.findById(botAccountId).lean();
+      if (!account) return NextResponse.json({ error: "Bot account not found" }, { status: 404 });
+      client = new TwitterApi({
+        appKey: account.appKey, appSecret: account.appSecret,
+        accessToken: account.accessToken, accessSecret: account.accessSecret
+      });
+    } else {
+      client = await getActiveClient();
+    }
 
     let recipientId = userId;
     if (!recipientId && username) {

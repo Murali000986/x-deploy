@@ -1,142 +1,132 @@
 import { NextResponse } from 'next/server';
-import { getActiveClient } from '@/lib/xClient';
+import { TwitterApi } from 'twitter-api-v2';
+import { XAccount } from '@/lib/models/XAccount';
+import { connectDB } from '@/lib/db';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET() {
   try {
-    const { X_API_KEY, X_API_SECRET, X_ACCESS_TOKEN, X_ACCESS_SECRET } = process.env;
+    await connectDB();
+    const accounts = await XAccount.find({ appKey: { $exists: true } }).lean();
 
-    if (!X_API_KEY || !X_API_SECRET || !X_ACCESS_TOKEN || !X_ACCESS_SECRET) {
-      return NextResponse.json({ data: [], includes: { users: [] }, _warning: 'X API credentials missing.' });
+    if (accounts.length === 0) {
+      return NextResponse.json({ data: [], includes: { users: [] }, _warning: 'No Twitter/X accounts connected.' });
     }
-
-    const client = await getActiveClient();
-
-    const me = await client.v2.me();
-    const myId = me.data.id;
 
     const allMessages: any[] = [];
     const userMap: Record<string, any> = {};
     const seenMsgIds = new Set<string>();
+    const myIds = new Set<string>();
 
-    // ATTEMPT 1: v1.1 API (returns BOTH sent AND received)
-    let v1Success = false;
-    try {
-      const v1Result = await client.v1.get('direct_messages/events/list.json', { count: 50 });
-      const events: any[] = v1Result?.events ?? [];
-
-      events.forEach((ev: any) => {
-        const mc = ev.message_create;
-        const senderId = mc?.sender_id;
-        const recipientId = mc?.target?.recipient_id;
-        if (!senderId || !recipientId) return;
-        const convId = [senderId, recipientId].sort().join('-');
-        const msgId = ev.id;
-        if (!seenMsgIds.has(msgId)) {
-          allMessages.push({
-            id: msgId,
-            text: mc?.message_data?.text ?? '',
-            sender_id: senderId,
-            recipient_id: recipientId,
-            created_at: new Date(Number(ev.created_timestamp)).toISOString(),
-            dm_conversation_id: convId,
-          });
-          seenMsgIds.add(msgId);
-        }
-      });
-      v1Success = true;
-      console.log(`v1.1 success: ${allMessages.length} messages`);
-    } catch (v1Error: any) {
-      console.warn('v1.1 failed, using v2:', v1Error?.data?.title ?? v1Error?.message);
-    }
-
-    // ATTEMPT 2: v2 fallback
-    if (!v1Success) {
+    const promises = accounts.map(async (account) => {
       try {
-        const eventsRaw = await (client.v2 as any).get('dm_events', {
-          'dm_event.fields': 'text,sender_id,created_at,dm_conversation_id',
-          'expansions': 'sender_id',
-          'user.fields': 'username,name,profile_image_url',
-          'max_results': '50',
+        const client = new TwitterApi({
+          appKey: account.appKey, appSecret: account.appSecret,
+          accessToken: account.accessToken, accessSecret: account.accessSecret
         });
-        const events: any[] = eventsRaw?.data ?? [];
-        (eventsRaw?.includes?.users ?? []).forEach((u: any) => { userMap[u.id] = u; });
 
-        for (const msg of events) {
-          if (!seenMsgIds.has(msg.id)) {
-            allMessages.push(msg);
-            seenMsgIds.add(msg.id);
+        const me = await client.v2.me();
+        const myId = me.data.id;
+        myIds.add(myId);
+        userMap[myId] = {
+          id: myId,
+          name: me.data.name,
+          username: me.data.username,
+          profile_image_url: (me.data as any).profile_image_url ?? account.profileImageUrl,
+        };
+
+        // Helper to enrich a message
+        const enrich = (msg: any, msgId: string, convId: string, createdAt: string) => {
+          if (!seenMsgIds.has(msgId)) {
+            allMessages.push({
+              ...msg,
+              id: msgId,
+              created_at: new Date(Number(createdAt) || createdAt).toISOString(),
+              dm_conversation_id: convId,
+              botAccountId: account._id.toString(),
+              botUsername: account.username,
+              is_mine: msg.sender_id === myId
+            });
+            seenMsgIds.add(msgId);
           }
-        }
+        };
 
-        const convIds = [...new Set(events.map((e: any) => e.dm_conversation_id).filter(Boolean))];
-        for (const convId of convIds) {
+        // v1.1 Try
+        let v1Success = false;
+        try {
+          const v1Result = await client.v1.get('direct_messages/events/list.json', { count: 50 });
+          const events: any[] = v1Result?.events ?? [];
+          for (const ev of events) {
+            const mc = ev.message_create;
+            if (!mc?.sender_id || !mc?.target?.recipient_id) continue;
+            const convId = [mc.sender_id, mc.target.recipient_id].sort().join('-');
+            enrich({ text: mc.message_data?.text ?? '', sender_id: mc.sender_id, recipient_id: mc.target.recipient_id }, ev.id, convId, ev.created_timestamp);
+          }
+          v1Success = true;
+        } catch (_) {}
+
+        // v2 Fallback
+        if (!v1Success) {
           try {
-            const threadRaw = await (client.v2 as any).get(`dm_conversations/${convId}/dm_events`, {
+            const eventsRaw = await (client.v2 as any).get('dm_events', {
               'dm_event.fields': 'text,sender_id,created_at,dm_conversation_id',
               'expansions': 'sender_id',
               'user.fields': 'username,name,profile_image_url',
               'max_results': '50',
             });
-            (threadRaw?.data ?? []).forEach((msg: any) => {
-              if (!seenMsgIds.has(msg.id)) {
-                allMessages.push({ ...msg, dm_conversation_id: convId });
-                seenMsgIds.add(msg.id);
-              }
-            });
-            (threadRaw?.includes?.users ?? []).forEach((u: any) => { userMap[u.id] = u; });
+            (eventsRaw?.includes?.users ?? []).forEach((u: any) => { userMap[u.id] = u; });
+            for (const msg of eventsRaw?.data ?? []) enrich(msg, msg.id, msg.dm_conversation_id, msg.created_at);
+
+            const convIds = [...new Set((eventsRaw?.data ?? []).map((e: any) => e.dm_conversation_id as string).filter(Boolean))];
+            for (const convId of convIds) {
+              try {
+                const threadRaw = await (client.v2 as any).get(`dm_conversations/${convId}/dm_events`, {
+                  'dm_event.fields': 'text,sender_id,created_at,dm_conversation_id',
+                  'expansions': 'sender_id', 'user.fields': 'username,name,profile_image_url', 'max_results': '50',
+                });
+                (threadRaw?.includes?.users ?? []).forEach((u: any) => { userMap[u.id] = u; });
+                for (const msg of threadRaw?.data ?? []) enrich(msg, msg.id, convId as string, msg.created_at);
+              } catch (_) {}
+            }
           } catch (_) {}
         }
-      } catch (v2Error: any) {
-        console.error('v2 also failed:', v2Error?.message);
+      } catch (err: any) {
+        console.warn(`Failed fetching DMs for ${account.username}:`, err.message);
       }
-    }
+    });
 
-    // Collect all unique partner IDs and bulk-fetch profiles
+    await Promise.allSettled(promises);
+
+    // Collect all partner IDs
     const partnerIds = new Set<string>();
     allMessages.forEach(msg => {
       const parts = (msg.dm_conversation_id ?? '').split('-');
-      parts.forEach((p: string) => { if (p && p !== myId) partnerIds.add(p); });
-      if (msg.sender_id && msg.sender_id !== myId) partnerIds.add(msg.sender_id);
-      if (msg.recipient_id && msg.recipient_id !== myId) partnerIds.add(msg.recipient_id);
+      parts.forEach((p: string) => { if (p && !myIds.has(p)) partnerIds.add(p); });
+      if (msg.sender_id && !myIds.has(String(msg.sender_id))) partnerIds.add(String(msg.sender_id));
+      if (msg.recipient_id && !myIds.has(String(msg.recipient_id))) partnerIds.add(String(msg.recipient_id));
     });
 
-    if (partnerIds.size > 0) {
+    if (partnerIds.size > 0 && accounts[0]) {
       try {
-        const usersRes = await client.v2.users([...partnerIds], {
-          'user.fields': ['username', 'name', 'profile_image_url'] as any,
+        const client = new TwitterApi({
+          appKey: accounts[0].appKey, appSecret: accounts[0].appSecret,
+          accessToken: accounts[0].accessToken, accessSecret: accounts[0].accessSecret
         });
+        const usersRes = await client.v2.users([...partnerIds], { 'user.fields': ['username', 'name', 'profile_image_url'] as any });
         (usersRes.data ?? []).forEach((u: any) => { userMap[u.id] = u; });
-      } catch (e: any) {
-        console.warn('Partner user lookup failed:', e?.message);
-      }
+      } catch (_) {}
     }
-
-    userMap[myId] = {
-      id: myId,
-      name: me.data.name,
-      username: me.data.username,
-      profile_image_url: (me.data as any).profile_image_url,
-    };
 
     allMessages.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
 
     return NextResponse.json({
       data: allMessages,
       includes: { users: Object.values(userMap) },
-      _myId: myId,
+      _myIds: Array.from(myIds),
     });
 
   } catch (error: any) {
-    const isAuth = error.code === 401 || error.code === 403;
-    if (isAuth) {
-      return NextResponse.json({
-        data: [], includes: { users: [] },
-        _warning: '⚠️ DM permissions missing. Set "Read and write and Direct message" in X Dev Portal and regenerate tokens.'
-      });
-    }
-    const msg = error?.data?.detail ?? error?.message ?? 'Failed to fetch DM inbox';
-    return NextResponse.json({ _error: msg, data: [], includes: { users: [] } });
+    return NextResponse.json({ _error: error.message || 'Server error', data: [], includes: { users: [] } });
   }
 }
