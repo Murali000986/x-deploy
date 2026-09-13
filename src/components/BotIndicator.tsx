@@ -5,12 +5,18 @@ export default function BotIndicator() {
   const [botData, setBotData] = useState<any>(null);
 
   useEffect(() => {
-    fetch('/api/me')
-      .then(r => r.json())
-      .then(data => {
-        if (!data.error) setBotData(data);
-      })
-      .catch(() => {});
+    const fetchBot = () => {
+      fetch('/api/me')
+        .then(r => r.json())
+        .then(data => {
+          if (!data.error) setBotData(data);
+        })
+        .catch(() => {});
+    };
+
+    fetchBot();
+    window.addEventListener('account-switched', fetchBot);
+    return () => window.removeEventListener('account-switched', fetchBot);
   }, []);
 
   return (

@@ -102,6 +102,7 @@ export default function SettingsPage() {
   const switchAccount = async (id: string) => {
     await fetch('/api/accounts/switch', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id }) });
     fetchAccounts();
+    window.dispatchEvent(new Event('account-switched'));
   };
 
   const removeAccount = async (id: string) => {
