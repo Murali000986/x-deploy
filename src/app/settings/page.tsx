@@ -219,7 +219,7 @@ export default function SettingsPage() {
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2 font-semibold text-sm text-zinc-800">
             <Users className="w-4 h-4" />
-            Connected X Accounts
+            Connected Accounts
           </div>
           <button
             onClick={() => setShowAddModal(true)}
