@@ -279,24 +279,60 @@ export default function SettingsPage() {
 
       {/* Add Account Modal */}
       {showAddModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-2xl w-full max-w-md p-6 shadow-xl space-y-4">
-            <h3 className="font-bold text-lg">Add X Account via API Keys</h3>
-            <p className="text-xs text-zinc-500">Provide all 4 credentials from the X Developer Portal for the specific bot account you want to manage.</p>
+        <div className="fixed inset-0 bg-zinc-900/40 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-in fade-in duration-200">
+          <div className="bg-white rounded-[24px] w-full max-w-md p-6 shadow-2xl space-y-6 animate-in zoom-in-95 duration-200">
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <div className="w-10 h-10 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center">
+                  <Key className="w-5 h-5" />
+                </div>
+                <button onClick={() => setShowAddModal(false)} className="p-2 text-zinc-400 hover:bg-zinc-50 rounded-full transition-colors cursor-pointer">
+                  <XCircle className="w-5 h-5" />
+                </button>
+              </div>
+              <h3 className="text-xl font-bold text-zinc-900">Connect New Account</h3>
+              <p className="text-sm text-zinc-500 mt-1">
+                Enter your Developer Portal credentials to securely link a new X profile to the dashboard.
+              </p>
+            </div>
             
-            <form onSubmit={handleAddSubmit} className="space-y-3">
-              <input type="text" name="appKey" placeholder="App Key (API Key)" required className="w-full px-3 py-2 text-sm border rounded-xl" />
-              <input type="text" name="appSecret" placeholder="App Secret (API Secret)" required className="w-full px-3 py-2 text-sm border rounded-xl" />
-              <input type="text" name="accessToken" placeholder="Access Token" required className="w-full px-3 py-2 text-sm border rounded-xl" />
-              <input type="text" name="accessSecret" placeholder="Access Token Secret" required className="w-full px-3 py-2 text-sm border rounded-xl" />
+            <form onSubmit={handleAddSubmit} className="space-y-4">
+              <div className="space-y-3">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold text-zinc-700 uppercase tracking-widest pl-1">API Key (Consumer)</label>
+                  <input type="text" name="appKey" required placeholder="API Key" className="w-full px-4 py-3 text-sm bg-zinc-50/50 border border-zinc-200 focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 rounded-2xl outline-none transition-all placeholder:text-zinc-400 font-mono" />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold text-zinc-700 uppercase tracking-widest pl-1">API Secret</label>
+                  <input type="text" name="appSecret" required placeholder="API Secret" className="w-full px-4 py-3 text-sm bg-zinc-50/50 border border-zinc-200 focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 rounded-2xl outline-none transition-all placeholder:text-zinc-400 font-mono" />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold text-zinc-700 uppercase tracking-widest pl-1">Access Token (User User)</label>
+                  <input type="text" name="accessToken" required placeholder="Access Token" className="w-full px-4 py-3 text-sm bg-zinc-50/50 border border-zinc-200 focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 rounded-2xl outline-none transition-all placeholder:text-zinc-400 font-mono" />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold text-zinc-700 uppercase tracking-widest pl-1">Access Secret</label>
+                  <input type="text" name="accessSecret" required placeholder="Access Token Secret" className="w-full px-4 py-3 text-sm bg-zinc-50/50 border border-zinc-200 focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 rounded-2xl outline-none transition-all placeholder:text-zinc-400 font-mono" />
+                </div>
+              </div>
               
-              <div className="flex gap-2 pt-2">
-                <button type="button" onClick={() => setShowAddModal(false)} className="flex-1 px-4 py-2 bg-zinc-100 text-zinc-700 hover:bg-zinc-200 rounded-xl text-sm font-medium">Cancel</button>
-                <button type="submit" disabled={isAdding} className="flex-1 px-4 py-2 bg-blue-600 text-white hover:bg-blue-700 rounded-xl text-sm font-medium flex items-center justify-center">
-                  {isAdding ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Verify & Add'}
+              <div className="pt-2">
+                <button 
+                  type="submit" 
+                  disabled={isAdding} 
+                  className="w-full px-4 py-3.5 bg-zinc-900 text-white hover:bg-zinc-800 focus:ring-4 focus:ring-zinc-900/20 rounded-2xl text-sm font-semibold flex items-center justify-center transition-all cursor-pointer shadow-md shadow-zinc-900/10 disabled:opacity-70 disabled:cursor-not-allowed"
+                >
+                  {isAdding ? (
+                    <><Loader2 className="w-4 h-4 animate-spin mr-2" /> Connecting...</>
+                  ) : 'Verify & Add Account'}
                 </button>
               </div>
             </form>
+
+            <div className="mt-4 flex items-center gap-2 p-3 bg-blue-50 border border-blue-100 rounded-xl text-blue-700 text-xs shadow-sm">
+              <Bot className="w-4 h-4 shrink-0" />
+              <p>Your keys are securely encrypted and stored locally in your database.</p>
+            </div>
           </div>
         </div>
       )}
